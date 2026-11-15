@@ -1,6 +1,6 @@
 # FLAMELENS-AI — Microgravity & Partial-Gravity Combustion Science Platform
 
-[![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-Vercel-black)](https://flamelens-ai.vercel.app)
+[![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-Vercel-black)](https://flamelens-app.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Node: 18+](https://img.shields.io/badge/Node-18%2B-green.svg)](https://nodejs.org/)
@@ -14,7 +14,7 @@
 
 | Resource | Link |
 |---|---|
-| 🌐 **Live Demo (Vercel)** | https://flamelens-ai.vercel.app |
+| 🌐 **Live Demo (Vercel)** | https://flamelens-app.vercel.app |
 | 🎬 **Video Walkthrough** | *(add your Loom/YouTube link here)* |
 | 📦 **Judge ZIP Package** | `FLAMELENS-AI-Complete-Application.zip` (550 files, 25.4 MB) |
 
