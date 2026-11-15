@@ -1,5 +1,6 @@
 # FLAMELENS-AI — Microgravity & Partial-Gravity Combustion Science Platform
 
+[![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-Vercel-black)](https://flamelens-ai.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Node: 18+](https://img.shields.io/badge/Node-18%2B-green.svg)](https://nodejs.org/)
@@ -8,6 +9,20 @@
 
 > **NASA Space Apps Challenge:** *"Flame in Freefall: AI-Powered Fire Safety Insights from Microgravity Combustion Data"*  
 > **FLAMELENS-AI** is a comprehensive scientific visualization, machine-learning, and active-learning platform built upon 24 NASA flight investigations, 2,009 microgravity test runs, 277 NASA Technical Reports Server (NTRS) publications, and 138 NASA Task Book research programs.
+
+## 🚀 Live Demo & Video Walkthrough
+
+| Resource | Link |
+|---|---|
+| 🌐 **Live Demo (Vercel)** | https://flamelens-ai.vercel.app |
+| 🎬 **Video Walkthrough** | *(add your Loom/YouTube link here)* |
+| 📦 **Judge ZIP Package** | `FLAMELENS-AI-Complete-Application.zip` (550 files, 25.4 MB) |
+
+> **No install needed** — click the Live Demo link and the full platform loads instantly in your browser.
+
+---
+
+> **What "AI" means in FlameLens AI:** The AI refers to Bayesian machine learning — specifically a Matérn-5/2 Gaussian Process Regressor trained on 256 authentic NASA FLEX flight records to predict droplet burn-rate constants and guide experimental design via Expected Information Gain (EIG) active learning. No black-box models; every prediction is traceable to real NASA flight data.
 
 ---
 

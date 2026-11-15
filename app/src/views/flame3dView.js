@@ -227,6 +227,7 @@ export function mountFlame3D(root, data, { controls, scenario, gravity }) {
           <div class="toolbar-cluster cluster-gravity">
             <span class="cluster-label font-mono">GRAVITY</span>
             <div id="v3-g"></div>
+            <span class="cluster-note font-mono" title="0g microgravity is calibrated to NASA FLEX flight data. Partial-gravity flame morphology (0.16g–1g) is a qualitative phenomenological model, not a CFD simulation.">0g = flight data · &gt;0g = qualitative</span>
           </div>
           <div class="toolbar-cluster cluster-camera">
             <span class="cluster-label font-mono">CAMERA</span>

@@ -432,6 +432,17 @@
   text-transform: uppercase;
 }
 
+.cluster-note {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-flame-bright, #FF9A3D);
+  opacity: 0.75;
+  cursor: help;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
 .lab-unified-toolbar .seg {
   display: inline-flex;
   background: var(--color-space-deep);

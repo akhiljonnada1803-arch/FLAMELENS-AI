@@ -2,6 +2,16 @@
 
 Welcome to **FLAMELENS-AI** (NASA Space Apps Challenge: *"Flame in Freefall: AI-Powered Fire Safety Insights from Microgravity Combustion Data"*).
 
+---
+
+## ✨ Quickest Path: Live Demo (No Installation)
+
+👉 **[https://flamelens-ai.vercel.app](https://flamelens-ai.vercel.app)** — opens instantly in any browser. No setup, no ZIP, no Python.
+
+🎬 **Video Walkthrough:** *(add your Loom/YouTube link here)* — 2-minute tour of all four scientific pillars.
+
+---
+
 This package contains the complete application, mathematical models, machine-learning pipeline, datasets, and precompiled interactive production build.
 
 ---
