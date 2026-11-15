@@ -10,7 +10,7 @@ driver = webdriver.Chrome(options=opts)
 
 try:
     driver.set_window_size(1440, 960)
-    driver.get('http://localhost:5174/#panorama')
+    driver.get('http://localhost:5174/#overview')
     time.sleep(2)
 
     # Check console logs
@@ -82,8 +82,8 @@ try:
     time.sleep(1)
     print(f'  Clicked "Explore the Laboratory", Current URL Hash: {driver.current_url.split("/")[-1]}')
     
-    # Return to panorama
-    driver.get('http://localhost:5174/#panorama')
+    # Return to overview
+    driver.get('http://localhost:5174/#overview')
     time.sleep(1)
     
     # Click Evidence button
@@ -92,8 +92,8 @@ try:
     time.sleep(1)
     print(f'  Clicked "Explore the Evidence", Current URL Hash: {driver.current_url.split("/")[-1]}')
     
-    # Return to panorama
-    driver.get('http://localhost:5174/#panorama')
+    # Return to overview
+    driver.get('http://localhost:5174/#overview')
     time.sleep(1)
     
     # Click Optimizer button in capabilities

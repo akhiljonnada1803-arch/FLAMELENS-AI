@@ -198,7 +198,7 @@ export function mountOptimizer(root, data, { go }) {
         
         <div id="opt-status-container" style="display:flex; flex-direction:column; gap:4px;">
           <span class="status st-good" id="opt-cand-status" style="font-size:11px; width:fit-content;">FEASIBLE_SPACEFLIGHT</span>
-          <span id="opt-feasibility-source" style="font-size:10.5px; color:var(--ink-2); font-family:var(--f-mono); line-height:1.35;">Hardware: ISS CIR / MDCA (NASA/TP-2017-219299)</span>
+          <span id="opt-feasibility-source" style="font-size:10.5px; color:var(--ink-2); font-family:var(--f-mono); line-height:1.35;">Hardware: ISS CIR / MDCA (PSI-69 FLEX Flight Archive)</span>
         </div>
 
         <div id="opt-extrapolation-alert" style="display:none; background:rgba(245,158,11,0.12); border:1px solid #f59e0b; border-radius:6px; padding:8px 10px; font-size:11.5px; color:#fde68a; line-height:1.4;">
@@ -463,6 +463,7 @@ export function mountOptimizer(root, data, { go }) {
   let evidenceLedger = [];
   let gprModelsData = null;
   let activeGprInstance = null;
+  let activeBenchmarkHonest = null; // hoisted so openTestCard can read it
   let activeGravity = 0.0;
   let activeFuel = "n-heptane";
   let activeSlice = "P"; // 'P' | 'O2' | 'D0'
@@ -599,18 +600,30 @@ export function mountOptimizer(root, data, { go }) {
       xLabel = "Oxidizer Mole Fraction X_O₂ (% O₂)";
       xFormatter = (v) => `${Math.round(v * 100)}%`;
     } else {
-      minX = 1.0; maxX = 4.5;
+      minX = 0.5; maxX = 2.6;
       xLabel = "Initial Droplet Diameter d₀ (mm)";
       xFormatter = (v) => `${v.toFixed(1)} mm`;
     }
 
     // Compute Y domain (Burning Rate K in mm²/s)
     let maxY = 0.85;
-    slicePoints.forEach(c => {
-      const k = c.predicted_burn_rate_k ?? 0.5;
-      const sig = c.prediction_uncertainty_std ?? 0.15;
-      if (k + 2 * sig > maxY) maxY = Math.min(1.4, Math.ceil((k + 2 * sig) * 10) / 10);
-    });
+    if (activeGprInstance) {
+      for (let i = 0; i <= 20; i++) {
+        const xVal = minX + (i / 20) * (maxX - minX);
+        let ptP = targetP, ptO2 = targetO2, ptD0 = targetD0;
+        if (activeSlice === "P") ptP = xVal;
+        else if (activeSlice === "O2") ptO2 = xVal;
+        else if (activeSlice === "D0") ptD0 = xVal;
+        const pr = activeGprInstance.predict([ptP, ptO2, ptD0]);
+        if (pr.mean + 2 * pr.sigmaF > maxY) maxY = Math.min(1.4, Math.ceil((pr.mean + 2 * pr.sigmaF) * 10) / 10);
+      }
+    } else {
+      slicePoints.forEach(c => {
+        const k = c.predicted_burn_rate_k ?? 0.5;
+        const sig = c.prediction_uncertainty_std ?? 0.15;
+        if (k + 2 * sig > maxY) maxY = Math.min(1.4, Math.ceil((k + 2 * sig) * 10) / 10);
+      });
+    }
     const minY = 0.0;
 
     const toPxX = (v) => padL + ((v - minX) / (maxX - minX)) * plotW;
@@ -686,26 +699,54 @@ export function mountOptimizer(root, data, { go }) {
       }
     }
 
-    // 3. Process curve points along slice
-    const pts = slicePoints.map(c => {
-      let xVal = c.pressure_atm;
-      if (activeSlice === "O2") xVal = c.o2_mole_fraction;
-      if (activeSlice === "D0") xVal = c.droplet_diameter_mm;
-      const k = c.predicted_burn_rate_k ?? 0.5;
-      const sig = c.prediction_uncertainty_std ?? 0.12;
-      return {
-        x: xVal,
-        k: k,
-        sig: sig,
-        upperK: Math.min(maxY, k + 2 * sig),
-        lowerK: Math.max(minY, k - 2 * sig),
-        px: toPxX(xVal),
-        py: toPxY(k),
-        pUpper: toPxY(Math.min(maxY, k + 2 * sig)),
-        pLower: toPxY(Math.max(minY, k - 2 * sig)),
-        cand: c
-      };
-    }).filter(p => p.px >= padL - 10 && p.px <= width - padR + 10);
+    // 3. Process curve points along slice (using live GPR when available, fallback to candidate points)
+    let pts = [];
+    if (activeGprInstance) {
+      const steps = 60;
+      for (let i = 0; i <= steps; i++) {
+        const xVal = minX + (i / steps) * (maxX - minX);
+        let ptP = targetP, ptO2 = targetO2, ptD0 = targetD0;
+        if (activeSlice === "P") ptP = xVal;
+        else if (activeSlice === "O2") ptO2 = xVal;
+        else if (activeSlice === "D0") ptD0 = xVal;
+
+        const pr = activeGprInstance.predict([ptP, ptO2, ptD0]);
+        const k = pr.mean;
+        const sig = pr.sigmaF;
+        pts.push({
+          x: xVal,
+          k: k,
+          sig: sig,
+          upperK: Math.min(maxY, k + 2 * sig),
+          lowerK: Math.max(minY, k - 2 * sig),
+          px: toPxX(xVal),
+          py: toPxY(k),
+          pUpper: toPxY(Math.min(maxY, k + 2 * sig)),
+          pLower: toPxY(Math.max(minY, k - 2 * sig)),
+          cand: null
+        });
+      }
+    } else {
+      pts = slicePoints.map(c => {
+        let xVal = c.pressure_atm;
+        if (activeSlice === "O2") xVal = c.o2_mole_fraction;
+        if (activeSlice === "D0") xVal = c.droplet_diameter_mm;
+        const k = c.predicted_burn_rate_k ?? 0.5;
+        const sig = c.prediction_uncertainty_std ?? 0.12;
+        return {
+          x: xVal,
+          k: k,
+          sig: sig,
+          upperK: Math.min(maxY, k + 2 * sig),
+          lowerK: Math.max(minY, k - 2 * sig),
+          px: toPxX(xVal),
+          py: toPxY(k),
+          pUpper: toPxY(Math.min(maxY, k + 2 * sig)),
+          pLower: toPxY(Math.max(minY, k - 2 * sig)),
+          cand: c
+        };
+      }).filter(p => p.px >= padL - 10 && p.px <= width - padR + 10);
+    }
 
     if (pts.length >= 2) {
       // 4. Epistemic Uncertainty Shaded Envelope (±2σ · 95% Confidence Band)
@@ -863,15 +904,33 @@ export function mountOptimizer(root, data, { go }) {
         if (dist < minDist) { minDist = dist; closest = p; }
       });
 
-      if (closest && gprHud) {
+      if ((closest || activeGprInstance) && gprHud) {
         gprHud.style.display = "block";
         const coordStr = activeSlice === "P" ? `P = ${hoverX.toFixed(2)} atm` : (activeSlice === "O2" ? `X_O₂ = ${(hoverX * 100).toFixed(1)}%` : `d₀ = ${hoverX.toFixed(1)} mm`);
         const statusStr = hoverX < 0.70 && activeSlice === "P" ? `<span style="color:#f59e0b;">Sub-atmospheric Frontier</span>` : `<span style="color:var(--good);">Spaceflight Envelope</span>`;
+
+        let kVal = closest ? closest.k : 0.5;
+        let sigVal = closest ? closest.sig : 0.1;
+        let lowK = closest ? closest.lowerK : 0.0;
+        let upK = closest ? closest.upperK : 1.0;
+
+        if (activeGprInstance) {
+          let ptP = targetP, ptO2 = targetO2, ptD0 = targetD0;
+          if (activeSlice === "P") ptP = hoverX;
+          else if (activeSlice === "O2") ptO2 = hoverX;
+          else if (activeSlice === "D0") ptD0 = hoverX;
+          const pr = activeGprInstance.predict([ptP, ptO2, ptD0]);
+          kVal = pr.mean;
+          sigVal = pr.sigmaF;
+          lowK = Math.max(minY, kVal - 2 * sigVal);
+          upK = Math.min(maxY, kVal + 2 * sigVal);
+        }
+
         gprHud.innerHTML = `
           <div style="font-weight:700; color:var(--ink); margin-bottom:2px;">${coordStr} · ${statusStr}</div>
-          <div style="color:#38bdf8;">Predicted K: <b>${closest.k.toFixed(3)} mm²/s</b></div>
-          <div style="color:#a855f7;">Epistemic Uncertainty: <b>± ${(closest.sig * 2).toFixed(3)} mm²/s (±2σ)</b></div>
-          <div style="color:var(--ink-2); font-size:10px;">95% CI: [${closest.lowerK.toFixed(3)}, ${closest.upperK.toFixed(3)}] mm²/s</div>
+          <div style="color:#38bdf8;">Predicted K: <b>${kVal.toFixed(3)} mm²/s</b></div>
+          <div style="color:#a855f7;">Epistemic Uncertainty: <b>± ${(sigVal * 2).toFixed(3)} mm²/s (±2σ)</b></div>
+          <div style="color:var(--ink-2); font-size:10px;">95% CI: [${lowK.toFixed(3)}, ${upK.toFixed(3)}] mm²/s</div>
         `;
       }
     };
@@ -931,14 +990,14 @@ export function mountOptimizer(root, data, { go }) {
       statusEl.style.color = "var(--good-ink)";
       statusEl.style.borderColor = "var(--good)";
       statusEl.textContent = "Hypothetical candidate · Spaceflight Feasible";
-      if (feasSourceEl) feasSourceEl.textContent = `Hardware: ${cand.feasibility_source || cand.feasibilitySource || 'ISS CIR / MDCA (NASA/TP-2017-219299)'}`;
+      if (feasSourceEl) feasSourceEl.textContent = `Hardware: ${cand.feasibility_source || cand.feasibilitySource || 'ISS CIR / MDCA (PSI-69 FLEX Flight Archive)'}`;
     } else if (status === "GROUND_FACILITY_ONLY") {
       statusEl.className = "status st-warn";
       statusEl.style.background = "var(--warn-bg)";
       statusEl.style.color = "var(--warn-ink)";
       statusEl.style.borderColor = "var(--warn)";
       statusEl.textContent = "Hypothetical candidate · Ground Facility Only";
-      if (feasSourceEl) feasSourceEl.textContent = `Hardware: ${cand.feasibility_source || cand.feasibilitySource || 'NASA TM-107000 Zero-Gravity Facility'}`;
+      if (feasSourceEl) feasSourceEl.textContent = `Hardware: ${cand.feasibility_source || cand.feasibilitySource || 'NASA Zero-G Research Facility (NASA/TM-1999-209641)'}`;
     } else if (status === "HYPOTHETICAL_FRONTIER") {
       statusEl.className = "status st-info";
       statusEl.style.background = "rgba(32, 185, 232, 0.15)";
@@ -1244,6 +1303,23 @@ export function mountOptimizer(root, data, { go }) {
   // ==========================================
   // RETROSPECTIVE BENCHMARK UI (AUTHORITATIVE)
   // ==========================================
+  // benchmark_honest.json schema: { by_fuel: { "n-heptane": { strategies: { RANDOM, BAYESIAN_EIG, SPACE_FILLING } } } }
+  // Each strategy: { initial_rmse_mean, final_rmse_mean, pct_rmse_reduction_mean, ipe_mean, paired_vs_random }
+  function parseBenchmarkStrategies(bench, fuel) {
+    if (!bench) return null;
+    // New honest schema
+    if (bench.by_fuel) {
+      const fuelData = bench.by_fuel[fuel] || bench.by_fuel["methanol"] || Object.values(bench.by_fuel)[0];
+      if (!fuelData?.strategies) return null;
+      return { strategies: fuelData.strategies, fuel };
+    }
+    // Old schema fallback (summary_by_strategy)
+    if (bench.summary_by_strategy) {
+      return { strategies: bench.summary_by_strategy, fuel, legacy: true };
+    }
+    return null;
+  }
+
   function populateBenchmarkUI(bench) {
     const pill = q("#opt-benchmark-pill");
     const container = q("#opt-benchmark-table-container");
@@ -1254,65 +1330,94 @@ export function mountOptimizer(root, data, { go }) {
       toggleBtn.onclick = () => {
         const isHidden = drawer.style.display === "none";
         drawer.style.display = isHidden ? "block" : "none";
-        toggleBtn.textContent = isHidden ? "✕ Close Comparison" : "📊 View 4-Strategy Comparison";
+        toggleBtn.textContent = isHidden ? "✕ Close Comparison" : "📊 View Strategy Comparison";
       };
     }
 
-    if (!bench) return;
+    const parsed = parseBenchmarkStrategies(bench, activeFuel);
+    if (!parsed) return;
 
-    const summary = bench.summary_by_strategy || {};
-    const eig = summary["BAYESIAN_EIG"];
-    const rnd = summary["RANDOM"];
-    const comp = bench.comparative_analysis || {};
-    const eigComp = comp["BAYESIAN_EIG"] || {};
+    const { strategies, fuel, legacy } = parsed;
 
-    const eigPct = eig?.pct_rmse_reduction !== undefined ? eig.pct_rmse_reduction : 14.66;
-    const rndPct = rnd?.pct_rmse_reduction !== undefined ? rnd.pct_rmse_reduction : 13.10;
-    const eigInitRmse = eig?.initial_test_rmse_mm2_s !== undefined ? eig.initial_test_rmse_mm2_s : 0.0962;
-    const eigFinalRmse = eig?.final_test_rmse_mm2_s !== undefined ? eig.final_test_rmse_mm2_s : 0.0821;
-    const rndFinalRmse = rnd?.final_test_rmse_mm2_s !== undefined ? rnd.final_test_rmse_mm2_s : 0.0836;
-    const eigIpe = eig?.integrated_prediction_error_rmse_sum !== undefined ? eig.integrated_prediction_error_rmse_sum : 0.9378;
-    const rndIpe = rnd?.integrated_prediction_error_rmse_sum !== undefined ? rnd.integrated_prediction_error_rmse_sum : 1.0266;
-    const ipeAdvantagePct = rndIpe > 0 ? (((rndIpe - eigIpe) / rndIpe) * 100).toFixed(2) : "8.65";
-    const deltaRmse = eigComp?.final_rmse_difference_vs_random !== undefined ? eigComp.final_rmse_difference_vs_random : -0.0015;
+    // Field names differ between honest (mean-suffixed) and legacy schema
+    const getField = (s, honest, leg) => s?.[honest] ?? s?.[leg] ?? null;
 
-    // Subtitle pill: Authoritative metrics derived dynamically from benchmark JSON
+    const eig = strategies["BAYESIAN_EIG"];
+    const rnd = strategies["RANDOM"];
+
+    const eigPct  = getField(eig, "pct_rmse_reduction_mean",  "pct_rmse_reduction")  ?? 0;
+    const rndPct  = getField(rnd, "pct_rmse_reduction_mean",  "pct_rmse_reduction")  ?? 0;
+    const eigInit = getField(eig, "initial_rmse_mean",         "initial_test_rmse_mm2_s") ?? 0;
+    const eigFin  = getField(eig, "final_rmse_mean",           "final_test_rmse_mm2_s")   ?? 0;
+    const rndFin  = getField(rnd, "final_rmse_mean",           "final_test_rmse_mm2_s")   ?? 0;
+    const eigIpe  = getField(eig, "ipe_mean",                  "integrated_prediction_error_rmse_sum") ?? 0;
+    const rndIpe  = getField(rnd, "ipe_mean",                  "integrated_prediction_error_rmse_sum") ?? 0;
+
+    // paired_vs_random: CI and wins from the honest benchmark
+    const paired = eig?.paired_vs_random;
+    const meanDiff = paired?.mean_diff ?? (eigFin - rndFin);
+    const ci = paired?.ci95 ?? [null, null];
+    const distinguishable = ci[0] != null && (ci[0] > 0 || ci[1] < 0);
+
+    const ipeAdvantagePct = rndIpe > 0 ? (((rndIpe - eigIpe) / rndIpe) * 100).toFixed(2) : "0.00";
+    const fuelLabel = fuel === "methanol" ? "Methanol" : "n-Heptane";
+
+    // Subtitle pill: authoritative values, honest framing
     if (pill) {
-      pill.textContent = `Sequential Active Learning: -${eigPct}% Test RMSE (vs -${rndPct}% Random · 10 Steps)`;
+      const sigNote = distinguishable ? "" : " · not stat. sig. vs random";
+      pill.textContent = `EIG vs Random: −${eigPct.toFixed(1)}% RMSE (${fuelLabel} · 10 steps · 10 reps${sigNote})`;
     }
 
-    // 4 KPI Summary Cards (All derived dynamically from authoritative benchmark JSON)
-    const kpiEigVal = q("#opt-bench-kpi-eig");
-    const kpiEigSub = q("#opt-bench-kpi-eig-sub");
-    const kpiRndVal = q("#opt-bench-kpi-rnd");
-    const kpiRndSub = q("#opt-bench-kpi-rnd-sub");
-    const kpiIpeVal = q("#opt-bench-kpi-ipe");
-    const kpiIpeSub = q("#opt-bench-kpi-ipe-sub");
+    const kpiEigVal   = q("#opt-bench-kpi-eig");
+    const kpiEigSub   = q("#opt-bench-kpi-eig-sub");
+    const kpiRndVal   = q("#opt-bench-kpi-rnd");
+    const kpiRndSub   = q("#opt-bench-kpi-rnd-sub");
+    const kpiIpeVal   = q("#opt-bench-kpi-ipe");
+    const kpiIpeSub   = q("#opt-bench-kpi-ipe-sub");
     const kpiMarginVal = q("#opt-bench-kpi-margin");
     const kpiMarginSub = q("#opt-bench-kpi-margin-sub");
 
-    if (kpiEigVal) kpiEigVal.textContent = `-${eigPct}%`;
-    if (kpiEigSub) kpiEigSub.textContent = `Initial ${eigInitRmse.toFixed(3)} → Final ${eigFinalRmse.toFixed(3)} mm²/s`;
-    if (kpiRndVal) kpiRndVal.textContent = `-${rndPct}%`;
-    if (kpiRndSub) kpiRndSub.textContent = `Initial ${eigInitRmse.toFixed(3)} → Final ${rndFinalRmse.toFixed(3)} mm²/s`;
+    if (kpiEigVal) kpiEigVal.textContent = `-${eigPct.toFixed(1)}%`;
+    if (kpiEigSub) kpiEigSub.textContent = `${eigInit.toFixed(3)} → ${eigFin.toFixed(3)} mm²/s RMSE`;
+    if (kpiRndVal) kpiRndVal.textContent = `-${rndPct.toFixed(1)}%`;
+    if (kpiRndSub) kpiRndSub.textContent = `${eigInit.toFixed(3)} → ${rndFin.toFixed(3)} mm²/s RMSE`;
     if (kpiIpeVal) kpiIpeVal.textContent = `-${ipeAdvantagePct}%`;
     if (kpiIpeSub) kpiIpeSub.textContent = `Cumulative IPE: ${eigIpe.toFixed(3)} vs ${rndIpe.toFixed(3)}`;
-    if (kpiMarginVal) kpiMarginVal.textContent = deltaRmse < 0 ? `${deltaRmse.toFixed(4)} mm²/s` : `+${deltaRmse.toFixed(4)} mm²/s`;
-    if (kpiMarginSub) kpiMarginSub.textContent = `Final test margin on held-out flight data`;
+    if (kpiMarginVal) {
+      kpiMarginVal.textContent = meanDiff < 0 ? `${meanDiff.toFixed(4)} mm²/s` : `+${meanDiff.toFixed(4)} mm²/s`;
+      kpiMarginVal.style.color = distinguishable ? "var(--good)" : "var(--ink-2)";
+    }
+    if (kpiMarginSub) {
+      const ciText = ci[0] != null ? ` · 95% CI [${ci[0].toFixed(4)}, ${ci[1].toFixed(4)}]` : "";
+      kpiMarginSub.textContent = distinguishable
+        ? `Distinguishable from random${ciText}`
+        : `Not distinguishable from random (${paired?.n ?? 10} reps)${ciText}`;
+    }
 
-    if (container && summary && Object.keys(summary).length > 0) {
-      const rows = Object.entries(summary).map(([name, s]) => {
-        const diff = bench.comparative_analysis?.[name]?.final_rmse_difference_vs_random ?? 0;
-        const diffText = name === "RANDOM" ? "Baseline" : (diff < 0 ? `${diff.toFixed(4)} mm²/s` : `+${diff.toFixed(4)} mm²/s`);
-        const diffColor = diff < 0 ? "var(--good)" : (name === "RANDOM" ? "var(--ink-2)" : "var(--warn)");
+    // Strategy comparison table
+    if (container && Object.keys(strategies).length > 0) {
+      const rows = Object.entries(strategies).map(([name, s]) => {
+        const diff = s?.paired_vs_random?.mean_diff ?? null;
+        const diffText = name === "RANDOM" ? "Baseline"
+          : diff != null ? (diff < 0 ? `${diff.toFixed(4)} mm²/s` : `+${diff.toFixed(4)} mm²/s`)
+          : "—";
+        const diffColor = diff == null ? "var(--ink-2)"
+          : (name === "RANDOM" ? "var(--ink-2)" : (diff < 0 ? "var(--good)" : "var(--warn)"));
+        const initR = getField(s, "initial_rmse_mean", "initial_test_rmse_mm2_s");
+        const finR  = getField(s, "final_rmse_mean",   "final_test_rmse_mm2_s");
+        const pct   = getField(s, "pct_rmse_reduction_mean", "pct_rmse_reduction");
+        const ipe   = getField(s, "ipe_mean", "integrated_prediction_error_rmse_sum");
+        const sigTag = s?.paired_vs_random != null
+          ? (s.paired_vs_random.ci95?.[0] > 0 || s.paired_vs_random.ci95?.[1] < 0 ? " ✓" : " (ns)")
+          : "";
         return `
           <tr style="border-bottom:1px solid rgba(255,255,255,0.06);">
             <td style="padding:6px 10px; font-weight:600; font-family:var(--f-mono); color:var(--ink);">${esc(name)}</td>
-            <td style="padding:6px 10px; font-family:var(--f-mono);">${s.initial_test_rmse_mm2_s?.toFixed(4) || 'N/A'}</td>
-            <td style="padding:6px 10px; font-family:var(--f-mono);">${s.final_test_rmse_mm2_s?.toFixed(4) || 'N/A'}</td>
-            <td style="padding:6px 10px; font-family:var(--f-mono); color:var(--good);">-${s.pct_rmse_reduction?.toFixed(1) || '0.0'}%</td>
-            <td style="padding:6px 10px; font-family:var(--f-mono);">${s.integrated_prediction_error_rmse_sum?.toFixed(3) || 'N/A'}</td>
-            <td style="padding:6px 10px; font-family:var(--f-mono); color:${diffColor};">${diffText}</td>
+            <td style="padding:6px 10px; font-family:var(--f-mono);">${initR != null ? initR.toFixed(4) : 'N/A'}</td>
+            <td style="padding:6px 10px; font-family:var(--f-mono);">${finR  != null ? finR.toFixed(4)  : 'N/A'}</td>
+            <td style="padding:6px 10px; font-family:var(--f-mono); color:var(--good);">${pct != null ? `-${pct.toFixed(1)}%` : 'N/A'}</td>
+            <td style="padding:6px 10px; font-family:var(--f-mono);">${ipe  != null ? ipe.toFixed(3)  : 'N/A'}</td>
+            <td style="padding:6px 10px; font-family:var(--f-mono); color:${diffColor};">${diffText}${sigTag}</td>
           </tr>
         `;
       }).join("");
@@ -1321,7 +1426,7 @@ export function mountOptimizer(root, data, { go }) {
         <table style="width:100%; border-collapse:collapse; font-size:11.5px; text-align:left;">
           <thead>
             <tr style="border-bottom:1px solid var(--line-2); color:var(--ink-2); text-transform:uppercase; font-size:10px;">
-              <th style="padding:6px 10px;">Acquisition Strategy</th>
+              <th style="padding:6px 10px;">Strategy</th>
               <th style="padding:6px 10px;">Initial RMSE</th>
               <th style="padding:6px 10px;">Final RMSE (t=10)</th>
               <th style="padding:6px 10px;">RMSE Δ%</th>
@@ -1329,10 +1434,11 @@ export function mountOptimizer(root, data, { go }) {
               <th style="padding:6px 10px;">Δ vs Random</th>
             </tr>
           </thead>
-          <tbody>
-            ${rows}
-          </tbody>
+          <tbody>${rows}</tbody>
         </table>
+        <div style="margin-top:6px; font-size:10.5px; color:var(--ink-2);">
+          ✓ = 95% CI excludes zero &nbsp;·&nbsp; (ns) = not statistically significant vs random &nbsp;·&nbsp; Fuel: ${esc(fuelLabel)} &nbsp;·&nbsp; Protocol: 15 initial + 10 sequential steps, 30 held-out test, 10 reps
+        </div>
       `;
     }
   }
@@ -1350,11 +1456,12 @@ export function mountOptimizer(root, data, { go }) {
     proposalsData = proposals;
     evidenceLedger = Array.isArray(ledger) ? ledger : [];
     gprModelsData = gprModels;
+    activeBenchmarkHonest = benchmarkHonest || benchmark;
     if (gprModels?.models?.[activeFuel]) {
       activeGprInstance = new GPR(gprModels.models[activeFuel]);
     }
     initFacility();
-    populateBenchmarkUI(benchmarkHonest || benchmark || proposals?.benchmark_comparison?.sequential_simulation);
+    populateBenchmarkUI(activeBenchmarkHonest || proposals?.benchmark_comparison?.sequential_simulation);
     renderGPRSurface();
   });
 
@@ -1381,6 +1488,7 @@ export function mountOptimizer(root, data, { go }) {
     const pool = fuelData?.all_candidates || fuelData?.top_candidates || proposalsData?.all_candidates || proposalsData?.top_candidates || [];
     facility3d?.setCandidatePool(pool);
     applyFilters();
+    populateBenchmarkUI(activeBenchmarkHonest || proposalsData?.benchmark_comparison?.sequential_simulation);
     renderGPRSurface();
   }
 
@@ -1455,11 +1563,12 @@ export function mountOptimizer(root, data, { go }) {
     if (playBtn) playBtn.textContent = "⏸";
   });
 
+  const onScrubPointerUp = () => { scrubbing = false; };
   q("#opt-flame-scrub")?.addEventListener("pointerdown", () => { scrubbing = true; });
   q("#opt-flame-scrub")?.addEventListener("input", (e) => {
     facility3d?.flame.seek(e.target.value / 1000);
   });
-  window.addEventListener("pointerup", () => { scrubbing = false; });
+  window.addEventListener("pointerup", onScrubPointerUp);
 
   const SPEEDS = [0.5, 1, 2, 4];
   let si = 1;
@@ -1611,7 +1720,20 @@ export function mountOptimizer(root, data, { go }) {
   // Action button: Print one-page experimental test card
   q("#opt-btn-test-card")?.addEventListener("click", () => {
     if (currentCandidate) {
-      openTestCard(currentCandidate, activeGprInstance, activeFuel);
+      openTestCard({
+        fuel: activeFuel,
+        objective: q("#opt-objective")?.value || "MAX_INFORMATION_GAIN",
+        gravity: activeGravity,
+        constraints: {
+          maxP: parseFloat(q("#opt-p-slider")?.value || "2.5"),
+          maxO2: parseFloat(q("#opt-o2-slider")?.value || "0.42"),
+          maxD0: parseFloat(q("#opt-d0-slider")?.value || "2.5"),
+        },
+        batch: lastEvaluation?.allEvaluated || [currentCandidate],
+        gp: activeGprInstance,
+        modelMeta: proposalsData?.models_metadata?.[activeFuel] || gprModelsData?.models?.[activeFuel],
+        bench: activeBenchmarkHonest?.by_fuel?.[activeFuel] || activeBenchmarkHonest,
+      });
     }
   });
 
@@ -1629,6 +1751,7 @@ export function mountOptimizer(root, data, { go }) {
     },
     leave: () => {
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("pointerup", onScrubPointerUp);
       facility3d?.dispose();
     }
   };

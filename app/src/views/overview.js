@@ -11,7 +11,7 @@ const DISCOVERY_TOPICS = [
   "Cool Flame Transition Boundary",
 ];
 
-export function mountPanorama(root, data, { go }) {
+export function mountOverview(root, data, { go }) {
   const inv = data.inventory;
   const flex = data.flex;
   const rows = inv.reduce((s, r) => s + r.rows, 0);

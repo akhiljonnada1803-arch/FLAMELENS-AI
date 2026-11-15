@@ -23,7 +23,7 @@ def main():
     try:
         # 1. Desktop Validation & Initial Load
         driver.set_window_size(1440, 1100)
-        driver.get("http://localhost:5174/#panorama")
+        driver.get("http://localhost:5174/#overview")
         time.sleep(2)
         
         # Check console errors on load
@@ -75,10 +75,10 @@ def main():
             time.sleep(0.5)
             # Check current hash and that overview is visible (not broken)
             current_url = driver.current_url
-            panorama_visible = driver.find_element(By.ID, "view-panorama").is_displayed()
+            overview_visible = driver.find_element(By.ID, "view-overview").is_displayed()
             results["redirects"][r_hash] = {
                 "final_url": current_url,
-                "panorama_active": panorama_visible
+                "overview_active": overview_visible
             }
             
         # 3. Test Retained Module 1: 3D Combustion Laboratory (#lab3d)
@@ -125,13 +125,13 @@ def main():
         
         # 7. Responsive Validation: Tablet (820x1180) & Mobile (390x844)
         driver.set_window_size(820, 1180)
-        driver.get("http://localhost:5174/#panorama")
+        driver.get("http://localhost:5174/#overview")
         time.sleep(1)
         driver.save_screenshot(os.path.join(OUT_DIR, "simplification_overview_tablet.png"))
         print("Captured simplification_overview_tablet.png")
         
         driver.set_window_size(390, 844)
-        driver.get("http://localhost:5174/#panorama")
+        driver.get("http://localhost:5174/#overview")
         time.sleep(1)
         driver.save_screenshot(os.path.join(OUT_DIR, "simplification_overview_mobile.png"))
         print("Captured simplification_overview_mobile.png")

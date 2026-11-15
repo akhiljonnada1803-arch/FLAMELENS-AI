@@ -10,7 +10,7 @@ import { createRouter } from "./core/router.js";
 import { createSpace } from "./background/space.js";
 import { conditions, gravity, scenario, initScenario } from "./state.js";
 import { createControls } from "./ui/controls.js";
-import { mountPanorama } from "./views/panorama.js";
+import { mountOverview } from "./views/overview.js";
 import { mountExplorer } from "./views/explorer.js";
 import { mountExperiments } from "./views/experiments.js";
 import { mountFlame3D } from "./views/flame3dView.js";
@@ -20,7 +20,7 @@ import { mountOptimizer } from "./views/optimizerView.js";
 import { mountParts } from "./views/parts.js";
 
 const TABS = [
-  { id: "panorama", label: "Overview" },
+  { id: "overview", label: "Overview" },
   { id: "lab3d", label: "3D Laboratory" },
   { id: "data", label: "Evidence Explorer" },
   { id: "optimizer", label: "Design Optimizer" },
@@ -28,9 +28,8 @@ const TABS = [
 ];
 
 const ALIASES = {
-  overview: "panorama",
-  portada: "panorama",
-  inicio: "panorama",
+  portada: "overview",
+  inicio: "overview",
   lab: "lab3d",
   llama3d: "lab3d",
   "simulator/3d": "lab3d",
@@ -60,12 +59,12 @@ const ALIASES = {
   rag: "data/ledger",
   ai: "data/ledger",
   // Graceful redirects for removed secondary modules:
-  envelope: "panorama",
-  safety: "panorama",
-  "video-lab": "panorama",
-  video: "panorama",
-  contradiction: "panorama",
-  contradiccion: "panorama",
+  envelope: "overview",
+  safety: "overview",
+  "video-lab": "overview",
+  video: "overview",
+  contradiction: "overview",
+  contradiccion: "overview",
 };
 
 async function boot() {
@@ -83,7 +82,7 @@ async function boot() {
   let router;
   const go = (id, sub) => router.go(id, sub);
   const views = {
-    panorama: mountPanorama($("#view-panorama"), data, { go }),
+    overview: mountOverview($("#view-overview"), data, { go }),
     lab3d: mountFlame3D($("#view-lab3d"), data, shared),
     data: mountParts($("#view-data"), "data", [
       { id: "ledger", label: "Evidence Ledger (1,872)", mount: (el) => mountEvidenceLedger(el, data, { go }) },
@@ -93,8 +92,8 @@ async function boot() {
     optimizer: mountOptimizer($("#view-optimizer"), data, { go }),
     compare: mountCompare($("#view-compare"), data, { go }),
   };
-  router = createRouter({ tabs: TABS, views, initial: "panorama", aliases: ALIASES });
-  $(".brand").addEventListener("click", (e) => { e.preventDefault(); go("panorama"); });
+  router = createRouter({ tabs: TABS, views, initial: "overview", aliases: ALIASES });
+  $(".brand").addEventListener("click", (e) => { e.preventDefault(); go("overview"); });
 }
 
 boot().catch((err) => {

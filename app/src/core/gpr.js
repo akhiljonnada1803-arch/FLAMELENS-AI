@@ -204,3 +204,4 @@ export function gridAcquire(gp, limits, { k = 6, objective = "MAX_INFORMATION_GA
   }
   return picks;
 }
+

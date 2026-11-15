@@ -16,7 +16,7 @@ driver = webdriver.Chrome(options=opts)
 try:
     # 1. Desktop full & hero card
     driver.set_window_size(1440, 960)
-    driver.get("http://localhost:5174/#panorama")
+    driver.get("http://localhost:5174/#overview")
     time.sleep(2.5)
 
     # Check console errors
@@ -36,7 +36,7 @@ try:
 
     # 2. Tablet
     driver.set_window_size(820, 1180)
-    driver.get("http://localhost:5174/#panorama")
+    driver.get("http://localhost:5174/#overview")
     time.sleep(2)
     card = driver.find_element(By.ID, "hero-dual-flame")
     card.screenshot(os.path.join(out_dir, "hero_dual_flame_card_tablet.png"))
@@ -45,7 +45,7 @@ try:
 
     # 3. Mobile
     driver.set_window_size(390, 844)
-    driver.get("http://localhost:5174/#panorama")
+    driver.get("http://localhost:5174/#overview")
     time.sleep(2)
     card = driver.find_element(By.ID, "hero-dual-flame")
     card.screenshot(os.path.join(out_dir, "hero_dual_flame_card_mobile.png"))

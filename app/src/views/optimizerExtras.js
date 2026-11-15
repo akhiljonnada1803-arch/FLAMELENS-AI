@@ -32,8 +32,9 @@ export function consumeHandoff(target, maxAgeMs = 60000) {
 }
 /** The 3D Laboratory sliders are narrower than the optimizer's search space — clamp and say so. */
 export function clampForLab(p) {
-  const R = { pressure_atm: [0.5, 3.0], x_o2: [0.10, 0.40], d0_mm: [1.0, 5.0] };
-  const names = { pressure_atm: "Pressure", x_o2: "O₂ fraction", d0_mm: "Droplet d₀" };
+  // Keys must match the candidate object fields produced by normalizedCandidates in optimizerFacility.js
+  const R = { pressure_atm: [0.5, 3.0], o2_mole_fraction: [0.10, 0.40], droplet_diameter_mm: [1.0, 5.0] };
+  const names = { pressure_atm: "Pressure", o2_mole_fraction: "O₂ fraction", droplet_diameter_mm: "Droplet d₀" };
   const out = { ...p, notes: [] };
   for (const [k, [lo, hi]] of Object.entries(R)) {
     if (p[k] == null) continue;
@@ -92,3 +93,4 @@ export function openTestCard({ fuel, objective, gravity, constraints, batch, gp,
   window.open(url, "_blank");
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
+

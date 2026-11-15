@@ -265,3 +265,4 @@ export function drawBenchmarkCurves({ canvas, wrap, bench }) {
   ctx.fillStyle = C.text; ctx.font = "9.5px monospace"; ctx.textAlign = "left";
   ctx.fillText("mean ± 1 SD over reps", w - 124, 26 + Object.keys(S).length * 16 + 6);
 }
+
