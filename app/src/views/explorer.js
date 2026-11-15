@@ -18,14 +18,18 @@ export function mountExplorer(root, data, { open }) {
       <h2>Burning Rate vs. Oxygen</h2>
       <p class="lede">Each point represents a fuel droplet ignited aboard the International Space Station. The burning rate K quantifies how rapidly the droplet is consumed (d² law: d² = d₀² − K·t). Marker fill indicates test termination mode; click any point to view its complete record.</p>
     </div>
-    <div class="panel stack">
-      <div class="filters">
-        <div class="chips" id="f-fuel"></div>
-        <div class="chips" id="f-co2"></div>
-        <div class="chips" id="f-he"></div>
+    <div class="panel stack explorer-main-panel">
+      <div class="explorer-toolbar">
+        <div class="filters">
+          <div class="chips" id="f-fuel"></div>
+          <div class="chips" id="f-co2"></div>
+          <div class="chips" id="f-he"></div>
+        </div>
+        <div class="legend" id="lg-scatter"></div>
       </div>
-      <div class="legend" id="lg-scatter"></div>
-      <svg class="chart" id="scatter" viewBox="0 0 820 420" role="img" aria-label="Burning rate vs oxygen mole fraction scatter plot"></svg>
+      <div class="chart-stage">
+        <svg class="chart" id="scatter" viewBox="0 0 920 400" role="img" aria-label="Burning rate vs oxygen mole fraction scatter plot"></svg>
+      </div>
       <div class="dim small" id="scatter-count"></div>
     </div>
     <div class="grid-2">

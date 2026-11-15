@@ -60,19 +60,23 @@ export function validateHistoricalRecord(item) {
   };
 }
 
+import { evaluateCandidateFeasibility as evaluateFeas, FACILITY_REFERENCES, FACILITY_COST_ASSUMED } from "./feasibility.js";
+
+export { FACILITY_REFERENCES, FACILITY_COST_ASSUMED };
+
 export const DOCUMENTED_HARDWARE_LIMITS = {
   ISS_CIR_MDCA: {
-    facility: "ISS Combustion Integrated Rack (CIR) / MDCA",
-    source: "NASA/TP-2017-219299 CIR Operational Envelope",
+    facility: FACILITY_REFERENCES.ISS_CIR_CHAMBER.facility,
+    source: FACILITY_REFERENCES.ISS_CIR_CHAMBER.source,
     min_pressure_atm: 0.70,
-    max_pressure_atm: 3.00,
+    max_pressure_atm: FACILITY_REFERENCES.ISS_CIR_CHAMBER.max_pressure_atm,
     max_o2_mole_fraction: 0.30,
     min_droplet_d0_mm: 1.0,
     max_droplet_d0_mm: 5.0,
   },
   GROUND_DROP_TOWER: {
-    facility: "NASA Glenn Zero Gravity Research Facility (Drop Tower)",
-    source: "NASA TM-107000 Zero-Gravity Research Facility Ground Operations Manual",
+    facility: FACILITY_REFERENCES.ZERO_G_DROP_TOWER.facility,
+    source: FACILITY_REFERENCES.ZERO_G_DROP_TOWER.source,
     min_pressure_atm: 0.30,
     max_pressure_atm: 2.50,
     max_o2_mole_fraction: 0.40,
@@ -81,123 +85,14 @@ export const DOCUMENTED_HARDWARE_LIMITS = {
   },
   EXPLORATION_ATMOSPHERE: {
     standard: "NASA Exploration Atmosphere Standard (Lunar / Mars Habitat)",
-    source: "NASA-STD-3001 Vol 2 / NASA SP-2010-3407 (0.57 atm / 34% O2)",
-    target_pressure_atm: 0.57,
-    target_o2_mole_fraction: 0.34,
+    source: FACILITY_REFERENCES.EXPLORATION_ATMOSPHERE.source,
+    target_pressure_atm: FACILITY_REFERENCES.EXPLORATION_ATMOSPHERE.target_pressure_atm,
+    target_o2_mole_fraction: FACILITY_REFERENCES.EXPLORATION_ATMOSPHERE.target_o2_mole_fraction,
   }
 };
 
-export function evaluateCandidateFeasibility(data, userConstraints, activeGravity = 0.0) {
-  const violations = [];
-  const p = data.pressure_atm;
-  const o2 = data.o2_mole_fraction;
-  const d0 = data.droplet_diameter_mm;
-
-  // 1. User constraint limits
-  if (p !== null && p > userConstraints.maxP + 0.005) {
-    violations.push(`Pressure ${p.toFixed(2)} atm exceeds user limit of ${userConstraints.maxP.toFixed(2)} atm`);
-  }
-  if (o2 !== null && o2 > userConstraints.maxO2 + 0.005) {
-    violations.push(`Oxygen ${(o2 * 100).toFixed(1)}% exceeds user cap of ${(userConstraints.maxO2 * 100).toFixed(1)}%`);
-  }
-  if (d0 !== null && d0 > userConstraints.maxD0 + 0.05) {
-    violations.push(`Diameter ${d0.toFixed(1)} mm exceeds user limit of ${userConstraints.maxD0.toFixed(1)} mm`);
-  }
-
-  // 2. Unsupported conditions check
-  if (data.model_status === "UNSUPPORTED_FUEL" || data.error_message) {
-    violations.push(data.error_message || "Model not calibrated for selected fuel");
-    return {
-      feasibilityStatus: "UNSUPPORTED",
-      isFeasible: false,
-      violations,
-      recommendedFacility: "Not applicable",
-      feasibilitySource: "No empirical flight calibration for fuel",
-    };
-  }
-
-  if (activeGravity >= 1.0) {
-    violations.push("1.0g terrestrial buoyancy is uncalibrated. Surrogate is valid only for microgravity spherical droplet combustion.");
-    return {
-      feasibilityStatus: "UNSUPPORTED",
-      isFeasible: false,
-      violations,
-      recommendedFacility: "Terrestrial Rig (Uncalibrated)",
-      feasibilitySource: "NASA PSI-69 FLEX Microgravity Flight Archive",
-    };
-  }
-
-  if (p === null || o2 === null || d0 === null || p < 0.2 || p > 3.5 || o2 < 0.10 || o2 > 0.45) {
-    violations.push("Parameters exceed allowable physics and chamber limits");
-    return {
-      feasibilityStatus: "UNSUPPORTED",
-      isFeasible: false,
-      violations,
-      recommendedFacility: "Not applicable",
-      feasibilitySource: "Chamber Envelope Exceeded",
-    };
-  }
-
-  if (violations.length > 0) {
-    return {
-      feasibilityStatus: "UNSUPPORTED",
-      isFeasible: false,
-      violations,
-      recommendedFacility: "Constraint Violation",
-      feasibilitySource: "User Experimental Constraints",
-    };
-  }
-
-  // 3. Hypothetical Frontier check (Exploration atmosphere or partial gravity)
-  const isExplorationAtm = Math.abs(p - 0.57) < 0.06 && Math.abs(o2 - 0.34) < 0.05;
-  const isPartialG = activeGravity > 0.01 && activeGravity < 0.99;
-  if (isExplorationAtm || isPartialG) {
-    return {
-      feasibilityStatus: "HYPOTHETICAL_FRONTIER",
-      isFeasible: true,
-      violations: [],
-      recommendedFacility: isPartialG
-        ? "Lunar/Martian Surface Demonstration (Artemis Hab Qualification Needed)"
-        : "NASA Glenn Zero Gravity Research Facility (Drop Tower)",
-      feasibilitySource: "NASA-STD-3001 Vol 2 (0.57 atm / 34% O2 Habitat Standard)",
-    };
-  }
-
-  // 4. Ground Facility Only check (Sub-atmospheric <0.70 atm, Hyperbaric >3.00 atm, or Elevated O2 >30%)
-  const minCirP = DOCUMENTED_HARDWARE_LIMITS.ISS_CIR_MDCA.min_pressure_atm; // 0.70
-  const maxCirP = DOCUMENTED_HARDWARE_LIMITS.ISS_CIR_MDCA.max_pressure_atm; // 3.00
-  const maxCirO2 = DOCUMENTED_HARDWARE_LIMITS.ISS_CIR_MDCA.max_o2_mole_fraction; // 0.30
-
-  if (p < minCirP || p > maxCirP || o2 > maxCirO2) {
-    const reasons = [];
-    if (p < minCirP) {
-      reasons.push(`Sub-atmospheric pressure (${p.toFixed(2)} atm < ${minCirP.toFixed(2)} atm requires ground chamber evacuation)`);
-    } else if (p > maxCirP) {
-      reasons.push(`Elevated hyperbaric pressure (${p.toFixed(2)} atm > ${maxCirP.toFixed(2)} atm exceeds CIR flight limit)`);
-    } else if (p > 1.0) {
-      reasons.push(`Elevated chamber pressure (${p.toFixed(2)} atm)`);
-    }
-    if (o2 > maxCirO2) {
-      reasons.push(`Elevated oxidizer (${(o2 * 100).toFixed(0)}% > ${(maxCirO2 * 100).toFixed(0)}% exceeds standard CIR insert flight safety qualification per NASA/TP-2017-219299)`);
-    }
-    return {
-      feasibilityStatus: "GROUND_FACILITY_ONLY",
-      isFeasible: true,
-      violations: [],
-      recommendedFacility: "NASA Glenn Zero Gravity Research Facility (Drop Tower)",
-      feasibilitySource: `NASA TM-107000: ${reasons.join("; ")}`,
-      scientificRationale: `Restricted to ground facility: ${reasons.join("; ")}.`,
-    };
-  }
-
-  // 5. Standard Feasible Spaceflight
-  return {
-    feasibilityStatus: "FEASIBLE_SPACEFLIGHT",
-    isFeasible: true,
-    violations: [],
-    recommendedFacility: "ISS Combustion Integrated Rack (CIR) / MDCA insert",
-    feasibilitySource: "NASA/TP-2017-219299 CIR Operational Envelope (Standard Flight Hardware)",
-  };
+export function evaluateCandidateFeasibility(data, userConstraints, activeGravity = 0.0, envelope = null) {
+  return evaluateFeas(data, userConstraints, activeGravity, envelope);
 }
 
 // ================= FLAME RIG =================

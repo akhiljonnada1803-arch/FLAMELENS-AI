@@ -13,9 +13,9 @@ const BINS = [
 /** Percentage of test runs terminating in extinction, by O₂ bin and fuel type. */
 export function drawExtinction(svg, rows, fuels) {
   svg.innerHTML = "";
-  const W = 500;
-  const H = 320;
-  const m = { l: 46, r: 10, t: 30, b: 46 };
+  const W = 520;
+  const H = 340;
+  const m = { l: 52, r: 16, t: 32, b: 54 };
   const bw = (W - m.l - m.r) / BINS.length;
   const y = linear(0, 1, H - m.b, m.t);
   const g = el("g", { class: "grid" }, svg);
@@ -25,12 +25,12 @@ export function drawExtinction(svg, rows, fuels) {
     text(a, m.l - 8, y(v) + 4, `${Math.round(v * 100)}%`, { "text-anchor": "end" });
   });
   el("line", { x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b }, a);
-  text(a, (m.l + W - m.r) / 2, H - 6, "Ambient Oxygen", { "text-anchor": "middle", class: "chart-label-x" });
+  text(a, (m.l + W - m.r) / 2, H - 12, "Ambient Oxygen", { "text-anchor": "middle", class: "chart-label-x" });
 
   const inner = Math.min(24, (bw - 18) / fuels.length);
   BINS.forEach(([lo, hi, lab], i) => {
     const cx = m.l + bw * i + bw / 2;
-    text(a, cx, H - m.b + 18, lab, { "text-anchor": "middle" });
+    text(a, cx, H - m.b + 20, lab, { "text-anchor": "middle" });
     fuels.forEach((f, j) => {
       const s = rows.filter((r) => r.fuel === f && r.o2 > lo && r.o2 <= hi);
       if (!s.length) return;

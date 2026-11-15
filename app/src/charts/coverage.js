@@ -25,9 +25,9 @@ const MARKS = [
  */
 export function drawCoverage(svg, rows) {
   svg.innerHTML = "";
-  const W = 560;
-  const H = 330;
-  const m = { l: 86, r: 12, t: 26, b: 46 };
+  const W = 580;
+  const H = 340;
+  const m = { l: 88, r: 16, t: 32, b: 54 };
   const cw = (W - m.l - m.r) / O2.length;
   const ch = (H - m.t - m.b) / P.length;
   const seq = ["--seq-1", "--seq-2", "--seq-3", "--seq-4", "--seq-5", "--seq-6"].map(cssVar);
@@ -54,9 +54,9 @@ export function drawCoverage(svg, rows) {
     });
   });
   O2.forEach(([o0], oi) => {
-    if (oi % 2 === 0) text(a, m.l + oi * cw + cw / 2, H - m.b + 18, `${Math.round(o0 * 100)}%`, { "text-anchor": "middle" });
+    if (oi % 2 === 0) text(a, m.l + oi * cw + cw / 2, H - m.b + 20, `${Math.round(o0 * 100)}%`, { "text-anchor": "middle" });
   });
-  text(a, (m.l + W - m.r) / 2, H - 6, "Oxygen (mole fraction)", { "text-anchor": "middle", class: "chart-label-x" });
+  text(a, (m.l + W - m.r) / 2, H - 12, "Oxygen (mole fraction)", { "text-anchor": "middle", class: "chart-label-x" });
   text(a, 4, m.t - 12, "Pressure (atm)", { class: "chart-label-y" });
 
   const px = (o2) => m.l + ((o2 - 0.1) / 0.02) * cw;

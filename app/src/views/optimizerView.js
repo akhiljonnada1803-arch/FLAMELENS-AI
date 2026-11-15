@@ -1,5 +1,7 @@
 import { esc, fmt, ICON } from "../core/dom.js";
 import { createOptimizerFacility } from "../render/lab/optimizerFacility.js";
+import { GPR } from "../core/gpr.js";
+import { openTestCard, sendHandoff, clampForLab } from "./optimizerExtras.js";
 
 export function mountOptimizer(root, data, { go }) {
   root.innerHTML = `
@@ -276,9 +278,19 @@ export function mountOptimizer(root, data, { go }) {
           </p>
         </div>
 
-        <button type="button" class="btn small opt-btn-export" id="opt-btn-download">
-          Export Full Research Proposal
-        </button>
+        <div class="opt-dossier-actions" style="display:flex; flex-direction:column; gap:8px; margin-top:14px;">
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn small primary" id="opt-btn-test-card" style="flex:1; justify-content:center; font-size:11.5px;">
+              📄 Test Card
+            </button>
+            <button type="button" class="btn small secondary" id="opt-btn-simulate-lab" style="flex:1; justify-content:center; font-size:11.5px;">
+              🔬 In 3D Lab →
+            </button>
+          </div>
+          <button type="button" class="btn small opt-btn-export" id="opt-btn-download">
+            Export Full Research Proposal
+          </button>
+        </div>
       </div>
     </div>
 
@@ -449,6 +461,8 @@ export function mountOptimizer(root, data, { go }) {
   let facility3d = null;
   let proposalsData = null;
   let evidenceLedger = [];
+  let gprModelsData = null;
+  let activeGprInstance = null;
   let activeGravity = 0.0;
   let activeFuel = "n-heptane";
   let activeSlice = "P"; // 'P' | 'O2' | 'D0'
@@ -1329,17 +1343,26 @@ export function mountOptimizer(root, data, { go }) {
   Promise.all([
     fetch("/data/design_proposals.json").then((r) => r.json()).catch(() => ({ top_candidates: [] })),
     fetch("/data/evidence_ledger.json").then((r) => r.json()).catch(() => []),
-    fetch("/data/active_learning_benchmark.json").then((r) => r.json()).catch(() => null)
-  ]).then(([proposals, ledger, benchmark]) => {
+    fetch("/data/active_learning_benchmark.json").then((r) => r.json()).catch(() => null),
+    fetch("/data/gpr_models.json").then((r) => r.json()).catch(() => null),
+    fetch("/data/benchmark_honest.json").then((r) => r.json()).catch(() => null)
+  ]).then(([proposals, ledger, benchmark, gprModels, benchmarkHonest]) => {
     proposalsData = proposals;
     evidenceLedger = Array.isArray(ledger) ? ledger : [];
+    gprModelsData = gprModels;
+    if (gprModels?.models?.[activeFuel]) {
+      activeGprInstance = new GPR(gprModels.models[activeFuel]);
+    }
     initFacility();
-    populateBenchmarkUI(benchmark || proposals?.benchmark_comparison?.sequential_simulation);
+    populateBenchmarkUI(benchmarkHonest || benchmark || proposals?.benchmark_comparison?.sequential_simulation);
     renderGPRSurface();
   });
 
   function handleFuelChange(fuel) {
     activeFuel = fuel;
+    if (gprModelsData?.models?.[fuel]) {
+      activeGprInstance = new GPR(gprModelsData.models[fuel]);
+    }
     const badge = q("#opt-surrogate-badge");
     const headerStatus = q("#opt-header-model-status");
 
@@ -1583,6 +1606,21 @@ export function mountOptimizer(root, data, { go }) {
     a.download = "nasa_experimental_design_proposal.json";
     a.click();
     URL.revokeObjectURL(url);
+  });
+
+  // Action button: Print one-page experimental test card
+  q("#opt-btn-test-card")?.addEventListener("click", () => {
+    if (currentCandidate) {
+      openTestCard(currentCandidate, activeGprInstance, activeFuel);
+    }
+  });
+
+  // Action button: Send parameters directly to 3D Laboratory
+  q("#opt-btn-simulate-lab")?.addEventListener("click", () => {
+    if (currentCandidate) {
+      sendHandoff("lab3d", clampForLab(currentCandidate));
+      go("lab3d");
+    }
   });
 
   return {

@@ -1,6 +1,7 @@
 import "../styles/lab3d.css";
 import { esc, fmt, FUEL } from "../core/dom.js";
 import { conditions, gravity, scenario } from "../state.js";
+import { consumeHandoff } from "./optimizerExtras.js";
 import { PRESETS } from "../model/flame.js";
 import { ENVS, HOTSPOTS, VIEWS, LEVELS, STEPS, matchPreset, narrate, stepOf } from "../model/lab.js";
 import { statusLine } from "./simulator.js";
@@ -845,6 +846,14 @@ export function mountFlame3D(root, data, { controls, scenario, gravity }) {
   return {
     async enter() {
       active = true;
+      const handoff = consumeHandoff("lab3d");
+      if (handoff) {
+        if (handoff.fuel) conditions.update((c) => ({ ...c, fuel: handoff.fuel.toLowerCase().includes("meth") ? "Methanol" : "Heptane" }));
+        if (handoff.pressure_atm != null) conditions.update((c) => ({ ...c, P: handoff.pressure_atm }));
+        if (handoff.x_o2 != null) conditions.update((c) => ({ ...c, o2: handoff.x_o2 }));
+        if (handoff.d0_mm != null) conditions.update((c) => ({ ...c, d0: handoff.d0_mm }));
+        if (handoff.gravity != null) gravity.set({ g: handoff.gravity });
+      }
       paintStatic(scenario.get());
       unsub = scenario.subscribe(paintStatic);
       const msg = q("#v3-msg");

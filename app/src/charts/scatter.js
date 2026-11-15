@@ -11,25 +11,33 @@ export function marker(g, cx, cy, r, color, end, surface) {
 }
 
 export function legendHTML(withShapes = true) {
-  const fuels = ["Methanol", "Heptane"]
-    .map((f) => `<span class="legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="${cssVar(FUEL[f].color)}"/></svg>${FUEL[f].es}</span>`)
-    .join("");
-  if (!withShapes) return fuels;
-  const c = cssVar("--color-text-muted") || "#AAB7C6";
-  return (
-    fuels +
-    `<span class="legend-item" style="margin-left:14px"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="${c}"/></svg>Complete</span>` +
-    `<span class="legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="none" stroke="${c}" stroke-width="2"/></svg>Extinction</span>` +
-    `<span class="legend-item"><svg width="12" height="14"><path d="M1,7 L6,1 L11,7 L6,13Z" fill="${c}"/></svg>Disruption</span>`
-  );
+  const fuels = `
+    <div class="legend-group">
+      <span class="legend-group-title">Fuel</span>
+      <span class="legend-chip fuel-methanol"><span class="legend-dot" style="background:${cssVar(FUEL.Methanol.color) || '#20B9E8'};"></span>Methanol</span>
+      <span class="legend-chip fuel-heptane"><span class="legend-dot" style="background:${cssVar(FUEL.Heptane.color) || '#FF791F'};"></span>Heptane</span>
+    </div>
+  `;
+  if (!withShapes) return `<div class="legend-bar">${fuels}</div>`;
+  const c = cssVar("--color-text-muted") || "#CBD5E1";
+  const outcomes = `
+    <div class="legend-divider"></div>
+    <div class="legend-group">
+      <span class="legend-group-title">Termination Mode</span>
+      <span class="legend-chip"><span class="legend-dot" style="background:${c};"></span>Complete Burn</span>
+      <span class="legend-chip"><span class="legend-ring" style="border-color:${c};"></span>Extinction</span>
+      <span class="legend-chip"><span class="legend-diamond" style="background:${c};"></span>Disruption</span>
+    </div>
+  `;
+  return `<div class="legend-bar">${fuels}${outcomes}</div>`;
 }
 
 /** Burning rate K vs O₂ fraction: color = fuel, marker style = end mode. */
 export function drawScatter(svg, rows, onPick) {
   svg.innerHTML = "";
-  const W = 820;
-  const H = 420;
-  const m = { l: 56, r: 18, t: 30, b: 44 };
+  const W = 920;
+  const H = 400;
+  const m = { l: 64, r: 24, t: 32, b: 56 };
   const x = linear(0.1, 0.36, m.l, W - m.r);
   const y = linear(0, 1.1, H - m.b, m.t);
   axes(svg, {
@@ -42,7 +50,7 @@ export function drawScatter(svg, rows, onPick) {
     yf: (v) => v.toFixed(1),
   });
   el("line", { x1: x(0.209), x2: x(0.209), y1: m.t, y2: H - m.b, stroke: cssVar("--color-cyan") || "#20B9E8", "stroke-dasharray": "4 4", class: "ref-line", opacity: "0.75" }, svg);
-  text(svg, x(0.209) + 6, m.t + 10, "air · 20.9%", { class: "ref-line-label" });
+  text(svg, x(0.209) + 8, m.t + 12, "air · 20.9%", { class: "ref-line-label" });
 
   const surface = cssVar("--panel-solid");
   const g = el("g", {}, svg);
