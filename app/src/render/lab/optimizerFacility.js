@@ -930,9 +930,14 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
 
   let isDragging = false;
   let prevMouse = { x: 0, y: 0 };
+  let pointerDownPos = { x: 0, y: 0 };
   let spherical = { radius: 520, theta: 0, phi: Math.PI / 2.3 };
 
-  const onPointerDown = (e) => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; };
+  const onPointerDown = (e) => {
+    isDragging = true;
+    prevMouse = { x: e.clientX, y: e.clientY };
+    pointerDownPos = { x: e.clientX, y: e.clientY };
+  };
   const onPointerMove = (e) => {
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -953,6 +958,9 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
   const onPointerUp = () => { isDragging = false; };
 
   const onPointerClick = (e) => {
+    // If the user was dragging/orbiting the camera, ignore click to prevent accidental selections
+    if (Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y) > 6) return;
+
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;

@@ -850,10 +850,14 @@ export function mountFlame3D(root, data, { controls, scenario, gravity }) {
       const handoff = consumeHandoff("lab3d");
       if (handoff) {
         if (handoff.fuel) conditions.update((c) => ({ ...c, fuel: handoff.fuel.toLowerCase().includes("meth") ? "Methanol" : "Heptane" }));
-        if (handoff.pressure_atm != null) conditions.update((c) => ({ ...c, P: handoff.pressure_atm }));
-        if (handoff.x_o2 != null) conditions.update((c) => ({ ...c, o2: handoff.x_o2 }));
-        if (handoff.d0_mm != null) conditions.update((c) => ({ ...c, d0: handoff.d0_mm }));
-        if (handoff.gravity != null) gravity.set({ g: handoff.gravity });
+        const pVal = handoff.pressure_atm != null ? handoff.pressure_atm : handoff.P;
+        if (pVal != null) conditions.update((c) => ({ ...c, P: pVal }));
+        const o2Val = handoff.o2_mole_fraction != null ? handoff.o2_mole_fraction : (handoff.x_o2 != null ? handoff.x_o2 : handoff.o2);
+        if (o2Val != null) conditions.update((c) => ({ ...c, o2: o2Val }));
+        const d0Val = handoff.droplet_diameter_mm != null ? handoff.droplet_diameter_mm : (handoff.d0_mm != null ? handoff.d0_mm : handoff.d0);
+        if (d0Val != null) conditions.update((c) => ({ ...c, d0: d0Val }));
+        const gVal = handoff.gravity != null ? handoff.gravity : handoff.activeGravity;
+        if (gVal != null) gravity.set({ g: gVal });
       }
       paintStatic(scenario.get());
       unsub = scenario.subscribe(paintStatic);

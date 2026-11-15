@@ -1104,6 +1104,16 @@ export function mountOptimizer(root, data, { go }) {
         const kStr = h.measured_k !== null && h.measured_k !== undefined ? `, K=${h.measured_k.toFixed(2)} mm²/s` : '';
         return `• <b>${esc(h.run_id || h.evidence_id)}</b>: ${h.pressure_atm.toFixed(2)} atm, ${(h.oxygen_fraction * 100).toFixed(0)}% O₂, d₀=${h.droplet_diameter_mm.toFixed(1)}mm${kStr}`;
       }).join("<br>");
+    } else if (activeGprInstance && cand.pressure_atm != null && cand.o2_mole_fraction != null && cand.droplet_diameter_mm != null) {
+      const nov = activeGprInstance.novelty([cand.pressure_atm, cand.o2_mole_fraction, cand.droplet_diameter_mm]);
+      if (nov && nov.nearest && nov.nearest.length > 0) {
+        q("#opt-cand-neighbors").innerHTML = nov.nearest.map((n) => {
+          const kStr = n.k != null ? `, K=${n.k.toFixed(3)} mm²/s` : '';
+          return `• <b>${esc(n.id || 'PSI-69 FLEX')}</b>: ${n.x[0].toFixed(2)} atm, ${(n.x[1] * 100).toFixed(0)}% O₂, d₀=${n.x[2].toFixed(1)}mm${kStr} <span style="opacity:0.75; font-size:10px;">(${n.dist.toFixed(2)} ls)</span>`;
+        }).join("<br>");
+      } else {
+        q("#opt-cand-neighbors").textContent = "No nearest historical runs indexed.";
+      }
     } else {
       q("#opt-cand-neighbors").textContent = "No nearest historical runs indexed.";
     }
@@ -1573,8 +1583,16 @@ export function mountOptimizer(root, data, { go }) {
     });
     const cap = q("#opt-flame-caption");
     if (cap) {
-      let txt = s.enabled ? CAPTIONS[s.phaseIndex](s) : "Unsupported condition: no calibrated flame model, droplet only.";
-      if (s.enabled && s.gravity > 0.01 && s.gravity < 0.99) txt += " Buoyancy distortion is illustrative; no partial-g flight data.";
+      let txt = "";
+      if (s.enabled) {
+        txt = CAPTIONS[s.phaseIndex](s);
+        if (s.gravity > 0.01 && s.gravity < 0.99) txt += " Buoyancy distortion is illustrative; no partial-g flight data.";
+      } else {
+        const viol = currentCandidate?.violations?.[0];
+        txt = viol 
+          ? `Chamber constraint: ${viol} (droplet deployed, ignition withheld).`
+          : "Chamber constraint exceeded: ignition withheld for safety envelope.";
+      }
       if (cap.textContent !== txt) cap.textContent = txt;
     }
     const tEl = q("#opt-flame-time");
@@ -1597,6 +1615,7 @@ export function mountOptimizer(root, data, { go }) {
           selectedCandidateId = cand.candidate_id;
         }
         updateCandidateDossier(cand);
+        renderGPRSurface();
       },
       onSelectHistorical: (hist) => {
         displayHistoricalRun(hist);
@@ -1816,6 +1835,9 @@ export function mountOptimizer(root, data, { go }) {
   // Action button: Print one-page experimental test card
   q("#opt-btn-test-card")?.addEventListener("click", () => {
     if (currentCandidate) {
+      const topBatch = (lastEvaluation?.allEvaluated || [currentCandidate])
+        .filter(c => c.isFeasible !== false)
+        .slice(0, 8);
       openTestCard({
         fuel: activeFuel,
         objective: q("#opt-objective")?.value || "MAX_INFORMATION_GAIN",
@@ -1825,7 +1847,7 @@ export function mountOptimizer(root, data, { go }) {
           maxO2: parseFloat(q("#opt-o2-slider")?.value || "0.42"),
           maxD0: parseFloat(q("#opt-d0-slider")?.value || "2.5"),
         },
-        batch: lastEvaluation?.allEvaluated || [currentCandidate],
+        batch: topBatch.length > 0 ? topBatch : [currentCandidate],
         gp: activeGprInstance,
         modelMeta: proposalsData?.models_metadata?.[activeFuel] || gprModelsData?.models?.[activeFuel],
         bench: activeBenchmarkHonest?.by_fuel?.[activeFuel] || activeBenchmarkHonest,
@@ -1836,7 +1858,7 @@ export function mountOptimizer(root, data, { go }) {
   // Action button: Send parameters directly to 3D Laboratory
   q("#opt-btn-simulate-lab")?.addEventListener("click", () => {
     if (currentCandidate) {
-      sendHandoff("lab3d", clampForLab(currentCandidate));
+      sendHandoff("lab3d", clampForLab(currentCandidate, activeGravity));
       go("lab3d");
     }
   });

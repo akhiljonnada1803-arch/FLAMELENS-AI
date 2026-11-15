@@ -31,7 +31,7 @@ export function consumeHandoff(target, maxAgeMs = 60000) {
   } catch { return null; }
 }
 /** The 3D Laboratory sliders are narrower than the optimizer's search space — clamp and say so. */
-export function clampForLab(p) {
+export function clampForLab(p, gravity = 0.0) {
   // Keys must match the candidate object fields produced by normalizedCandidates in optimizerFacility.js
   const R = { pressure_atm: [0.5, 3.0], o2_mole_fraction: [0.10, 0.40], droplet_diameter_mm: [1.0, 5.0] };
   const names = { pressure_atm: "Pressure", o2_mole_fraction: "O₂ fraction", droplet_diameter_mm: "Droplet d₀" };
@@ -42,6 +42,13 @@ export function clampForLab(p) {
     if (v !== p[k]) out.notes.push(`${names[k]} ${p[k]} is outside the Lab range (${lo}–${hi}); clamped to ${v}.`);
     out[k] = v;
   }
+  // Synchronize parameter keys across modules so 3D Lab receives every condition
+  out.P = out.pressure_atm;
+  out.x_o2 = out.o2_mole_fraction;
+  out.o2 = out.o2_mole_fraction;
+  out.d0_mm = out.droplet_diameter_mm;
+  out.d0 = out.droplet_diameter_mm;
+  out.gravity = gravity != null ? gravity : (p.gravity ?? p.activeGravity ?? 0.0);
   return out;
 }
 
