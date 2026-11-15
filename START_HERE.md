@@ -8,7 +8,7 @@ Welcome to **FLAMELENS-AI** (NASA Space Apps Challenge: *"Flame in Freefall: AI-
 
 👉 **[https://flamelens-app.vercel.app](https://flamelens-app.vercel.app)** — opens instantly in any browser. No setup, no ZIP, no Python.
 
-🎬 **Video Walkthrough:** *(add your Loom/YouTube link here)* — 2-minute tour of all four scientific pillars.
+🎬 **Video Walkthrough (4 min):** [https://youtu.be/rhcC1fDF0_4](https://youtu.be/rhcC1fDF0_4) — covers all four scientific pillars.
 
 ---
 
