@@ -37,6 +37,12 @@ export function mountOptimizer(root, data, { go }) {
           <span class="badge" style="font-size:10px;">Parameter Space</span>
         </div>
 
+        <!-- Primary CTA at the top — first thing a judge clicks -->
+        <button type="button" class="btn primary opt-btn-generate" id="opt-btn-recalculate" style="width:100%; justify-content:center; margin-bottom:4px;">
+          ⚡ Run Optimizer
+        </button>
+        <div class="note" style="font-size:0.75rem; text-align:center; margin-bottom:12px; opacity:0.7;">Adjust parameters below, then click to rank candidates</div>
+
         <div class="opt-form-group">
           <label for="opt-fuel-select" class="opt-field-label">
             <span>Droplet Fuel Matrix</span>
@@ -112,9 +118,9 @@ export function mountOptimizer(root, data, { go }) {
           </div>
         </div>
 
-        <!-- Prominent Primary Action Button -->
-        <button type="button" class="btn primary opt-btn-generate" id="opt-btn-recalculate">
-          ⚡ Apply Constraints & Rank Candidates
+        <!-- Secondary Action Button -->
+        <button type="button" class="btn secondary opt-btn-generate" id="opt-btn-recalculate-bottom" style="width:100%; justify-content:center;">
+          ⚡ Recompute Candidate Rankings
         </button>
 
         <div class="note" style="font-size:0.78rem; line-height:1.45; margin-top:2px; opacity:0.85;">
@@ -192,7 +198,7 @@ export function mountOptimizer(root, data, { go }) {
         </div>
 
         <div class="opt-cand-header-box">
-          <span class="opt-cand-label">TARGET PROPOSAL</span>
+          <span class="opt-cand-label">BEST EXPERIMENT TO RUN NEXT</span>
           <h3 id="opt-cand-title" class="opt-cand-id">CAND-01</h3>
         </div>
         
@@ -227,12 +233,13 @@ export function mountOptimizer(root, data, { go }) {
             </div>
             <span class="opt-kpi-sublabel">Uncertainty (±2σ)</span>
           </div>
-          <div class="kpi">
+          <div class="kpi" title="Expected Information Gain: quantitative reduction in model entropy if this experiment is flown.">
             <div class="kpi-val-row">
               <b id="opt-cand-eig" class="font-mono" style="color:var(--warn);">--</b>
               <span class="kpi-unit">bits</span>
             </div>
             <span class="opt-kpi-sublabel">Bayesian EIG</span>
+            <span class="opt-kpi-hint font-mono" style="font-size:9.5px; opacity:0.8; color:var(--warn); display:block; margin-top:2px;">Higher = more discovery</span>
           </div>
           <div class="kpi">
             <div class="kpi-val-row">
@@ -1638,9 +1645,11 @@ export function mountOptimizer(root, data, { go }) {
     applyFilters();
   });
 
-  // Explicit calculation and parameter reset actions
-  q("#opt-btn-recalculate")?.addEventListener("click", () => {
-    applyFilters();
+  // Explicit calculation and parameter reset actions (handles both top and bottom buttons)
+  root.querySelectorAll(".opt-btn-generate").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      applyFilters();
+    });
   });
 
   q("#opt-btn-reset-params")?.addEventListener("click", () => {
