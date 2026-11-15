@@ -25,7 +25,34 @@ export function mountOptimizer(root, data, { go }) {
       </div>
     </div>
 
-    <!-- Mission Control 3-Column Layout -->
+    <!-- 3-Step Guided Workflow Banner -->
+    <div class="opt-workflow-banner">
+      <div class="opt-workflow-step">
+        <span class="step-num">STEP 1</span>
+        <div class="step-content">
+          <span class="step-title">Set Chamber Limits</span>
+          <span class="step-desc">Chamber P, O₂ & fuel envelope</span>
+        </div>
+      </div>
+      <div class="opt-workflow-arrow">➔</div>
+      <div class="opt-workflow-step">
+        <span class="step-num">STEP 2</span>
+        <div class="step-content">
+          <span class="step-title">GPR Active Learning</span>
+          <span class="step-desc">Bayesian EIG uncertainty search</span>
+        </div>
+      </div>
+      <div class="opt-workflow-arrow">➔</div>
+      <div class="opt-workflow-step highlight">
+        <span class="step-num">STEP 3</span>
+        <div class="step-content">
+          <span class="step-title">Optimal Flight Experiment</span>
+          <span class="step-desc">Max-information candidate & 3D preview</span>
+        </div>
+      </div>
+    </div>
+
+        <!-- Mission Control 3-Column Layout -->
     <div class="mission-control-layout">
       <!-- B. LEFT: Experimental Configuration Panel -->
       <div class="panel stack opt-config-panel">
@@ -42,6 +69,17 @@ export function mountOptimizer(root, data, { go }) {
           ⚡ Run Optimizer
         </button>
         <div class="note" style="font-size:0.75rem; text-align:center; margin-bottom:12px; opacity:0.7;">Adjust parameters below, then click to rank candidates</div>
+
+        <!-- Quick Flight Mission Presets -->
+        <div class="opt-form-group" style="background:rgba(255,255,255,0.03); padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.06); margin-bottom:12px;">
+          <span class="opt-field-label" style="font-size:11px; margin-bottom:6px;">Quick Flight Presets:</span>
+          <div class="chips opt-chip-group" id="opt-mission-presets">
+            <button type="button" class="chip active" data-preset="max" title="Full Chamber Limits: 2.50 atm, 42% O2">Chamber Max (2.5 atm)</button>
+            <button type="button" class="chip" data-preset="iss" title="ISS Standard Cabin: 1.00 atm, 21% O2">ISS Cabin (1.0 atm)</button>
+            <button type="button" class="chip" data-preset="artemis" title="Exploration Atmosphere: 0.57 atm, 34% O2">Artemis (0.57 atm)</button>
+          </div>
+        </div>
+
 
         <div class="opt-form-group">
           <label for="opt-fuel-select" class="opt-field-label">
@@ -977,6 +1015,21 @@ export function mountOptimizer(root, data, { go }) {
 
     q("#opt-cand-title").textContent = cand.candidate_id || "CAND-01";
     
+    // Dynamic label reflecting whether this is the winning recommendation or an excluded candidate
+    const labelEl = q(".opt-cand-label");
+    if (labelEl) {
+      if (isTopFeasible) {
+        labelEl.textContent = "★ #1 RECOMMENDED FLIGHT EXPERIMENT";
+        labelEl.style.color = "var(--good, #10b981)";
+      } else if (cand.isFeasible || status === "FEASIBLE_SPACEFLIGHT") {
+        labelEl.textContent = "FEASIBLE FLIGHT PROPOSAL";
+        labelEl.style.color = "var(--color-cyan, #38bdf8)";
+      } else {
+        labelEl.textContent = "EXCLUDED BY CHAMBER CONSTRAINTS";
+        labelEl.style.color = "var(--crit, #ef4444)";
+      }
+    }
+    
     // Format KPIs with separate value and unit elements to prevent line breaks
     q("#opt-cand-k").textContent = cand.predicted_burn_rate_k !== null && cand.predicted_burn_rate_k !== undefined ? cand.predicted_burn_rate_k.toFixed(3) : "--";
     q("#opt-cand-sigma").textContent = cand.prediction_uncertainty_std !== null && cand.prediction_uncertainty_std !== undefined ? `± ${(cand.prediction_uncertainty_std * 2).toFixed(3)}` : "--";
@@ -1295,8 +1348,13 @@ export function mountOptimizer(root, data, { go }) {
       renderCandidateStripAndTable(evalResult);
       let chosen = null;
       if (selectedCandidateId && evalResult.allEvaluated) {
-        chosen = evalResult.allEvaluated.find(c => c.candidate_id === selectedCandidateId);
+        const current = evalResult.allEvaluated.find(c => c.candidate_id === selectedCandidateId);
+        // Only keep current candidate if it is STILL feasible under the updated limits!
+        if (current && (current.isFeasible || current.feasibilityStatus === "FEASIBLE_SPACEFLIGHT")) {
+          chosen = current;
+        }
       }
+      // If the current candidate is no longer feasible (or not set), auto-switch to the new best feasible!
       if (!chosen) {
         chosen = evalResult.bestFeasible || evalResult.globallyOptimal;
       }
@@ -1642,6 +1700,35 @@ export function mountOptimizer(root, data, { go }) {
     handleFuelChange(e.target.value);
   });
   q("#opt-objective").addEventListener("change", () => {
+    applyFilters();
+  });
+
+  // Quick Flight Mission Presets
+  q("#opt-mission-presets")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-preset]");
+    if (!btn) return;
+    q("#opt-mission-presets").querySelectorAll("button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const p = btn.dataset.preset;
+    const pSlider = q("#opt-p-slider");
+    const o2Slider = q("#opt-o2-slider");
+    const d0Slider = q("#opt-d0-slider");
+    if (p === "iss") {
+      if (pSlider) pSlider.value = "1.00";
+      if (o2Slider) o2Slider.value = "0.21";
+      if (d0Slider) d0Slider.value = "2.5";
+    } else if (p === "artemis") {
+      if (pSlider) pSlider.value = "0.57";
+      if (o2Slider) o2Slider.value = "0.34";
+      if (d0Slider) d0Slider.value = "2.5";
+    } else if (p === "max") {
+      if (pSlider) pSlider.value = "2.50";
+      if (o2Slider) o2Slider.value = "0.42";
+      if (d0Slider) d0Slider.value = "2.5";
+    }
+    if (pSlider) q("#opt-p-val").textContent = `${parseFloat(pSlider.value).toFixed(2)} atm`;
+    if (o2Slider) q("#opt-o2-val").textContent = `${Math.round(parseFloat(o2Slider.value) * 100)}% O₂`;
+    if (d0Slider) q("#opt-d0-val").textContent = `${parseFloat(d0Slider.value).toFixed(1)} mm`;
     applyFilters();
   });
 
