@@ -235,6 +235,19 @@ export function mountOptimizer(root, data, { go }) {
           </div>
         </div>
 
+        <!-- Priority Flight Queue (Immediate Visual Prioritization) -->
+        <div class="opt-priority-queue" style="background:rgba(7,17,31,0.6); border:1px solid rgba(255,154,61,0.25); border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-flame-bright, #ff9a3d); display:flex; align-items:center; gap:5px;">
+              <span>🏆</span> FLIGHT PRIORITY QUEUE
+            </span>
+            <span class="dim font-mono" id="opt-queue-count" style="font-size:10px;">Ranked by EIG</span>
+          </div>
+          <div class="opt-queue-chips" id="opt-queue-chips" style="display:flex; flex-direction:column; gap:5px;">
+            <span class="dim small" style="padding:4px 0; font-size:11px;">Evaluating flight candidates...</span>
+          </div>
+        </div>
+
         <div class="opt-cand-header-box">
           <span class="opt-cand-label">BEST EXPERIMENT TO RUN NEXT</span>
           <h3 id="opt-cand-title" class="opt-cand-id">CAND-01</h3>
@@ -992,6 +1005,9 @@ export function mountOptimizer(root, data, { go }) {
     if (!cand) return;
     currentCandidate = cand;
 
+    const isTopFeasible = lastEvaluation?.bestFeasible && lastEvaluation.bestFeasible.candidate_id === cand.candidate_id;
+    const status = cand.feasibility_status || cand.feasibilityStatus || (cand.isFeasible ? "FEASIBLE_SPACEFLIGHT" : "UNSUPPORTED");
+
     const statusEl = q("#opt-cand-status");
     const feasSourceEl = q("#opt-feasibility-source");
     const rankEl = q("#opt-rank-indicator");
@@ -1038,11 +1054,7 @@ export function mountOptimizer(root, data, { go }) {
     q("#opt-cand-o2").textContent = cand.o2_mole_fraction !== null && cand.o2_mole_fraction !== undefined ? (cand.o2_mole_fraction * 100).toFixed(1) : "--";
     q("#opt-cand-d0").textContent = cand.droplet_diameter_mm !== null && cand.droplet_diameter_mm !== undefined ? cand.droplet_diameter_mm.toFixed(1) : "--";
 
-    const isTopFeasible = lastEvaluation?.bestFeasible && lastEvaluation.bestFeasible.candidate_id === cand.candidate_id;
-    rankEl.style.display = isTopFeasible ? "inline-block" : "none";
-
-    // Feasibility status badge: synchronize snake_case and camelCase
-    const status = cand.feasibility_status || cand.feasibilityStatus || (cand.isFeasible ? "FEASIBLE_SPACEFLIGHT" : "UNSUPPORTED");
+    if (rankEl) rankEl.style.display = isTopFeasible ? "inline-block" : "none";
     
     if (status === "FEASIBLE_SPACEFLIGHT") {
       statusEl.className = "status st-good";
@@ -1233,6 +1245,49 @@ export function mountOptimizer(root, data, { go }) {
     });
 
     if (countEl) countEl.textContent = `${sorted.length} Proposals Evaluated (${sorted.filter(c => c.isFeasible).length} Feasible)`;
+
+    // Populate Top-Priority Flight Queue in the Right Mission Dossier Panel
+    const queueEl = q("#opt-queue-chips");
+    if (queueEl) {
+      const topFeasible = sorted.filter(c => c.isFeasible !== false).slice(0, 4);
+      if (topFeasible.length === 0) {
+        queueEl.innerHTML = `<span style="font-size:11px; color:var(--crit,#ef4444); padding:4px 0;">No candidates feasible under current limits. Relax constraints above.</span>`;
+      } else {
+        queueEl.innerHTML = topFeasible.map((c, i) => {
+          const isSelected = currentCandidate?.candidate_id === c.candidate_id;
+          const eig = c.expected_information_gain_bits != null ? c.expected_information_gain_bits.toFixed(3) : "—";
+          const p = c.pressure_atm != null ? c.pressure_atm.toFixed(2) : "—";
+          const o2 = c.o2_mole_fraction != null ? (c.o2_mole_fraction * 100).toFixed(0) : "—";
+          const d0 = c.droplet_diameter_mm != null ? c.droplet_diameter_mm.toFixed(1) : "—";
+          const rankLabel = i === 0 ? "★ #1 PRIORITY" : `PRIORITY #${i + 1}`;
+          const borderCol = isSelected ? "var(--color-flame-bright, #ff9a3d)" : "rgba(255,255,255,0.08)";
+          const bgCol = isSelected ? "rgba(255,154,61,0.12)" : "rgba(255,255,255,0.02)";
+          return `<button type="button" class="opt-queue-chip" data-id="${esc(c.candidate_id)}" style="display:flex; flex-direction:column; gap:2px; text-align:left; padding:6px 9px; border-radius:6px; border:1px solid ${borderCol}; background:${bgCol}; cursor:pointer; width:100%; transition:all 0.15s ease;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+              <span style="font-weight:700; color:${i === 0 ? 'var(--color-flame-bright, #ff9a3d)' : 'var(--color-cyan, #38bdf8)'}; font-family:var(--f-mono);">${rankLabel}</span>
+              <span class="font-mono" style="font-size:10.5px; color:#fde68a;">+${eig} EIG bits</span>
+            </div>
+            <div style="font-size:11px; color:var(--ink-2, #aab7c6); font-family:var(--f-mono);">
+              P=${p} atm · ${o2}% O₂ · d₀=${d0}mm
+            </div>
+          </button>`;
+        }).join("");
+
+        queueEl.querySelectorAll(".opt-queue-chip").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const hitId = btn.dataset.id;
+            const cand = sorted.find(c => c.candidate_id === hitId);
+            if (cand) {
+              selectedCandidateId = cand.candidate_id;
+              facility3d?.selectCandidate(cand, true);
+              updateCandidateDossier(cand);
+              renderGPRSurface();
+              renderCandidateStripAndTable(lastEvaluation);
+            }
+          });
+        });
+      }
+    }
 
     // 1. Render Carousel Cards (Top 12)
     sorted.slice(0, 12).forEach((c, idx) => {
