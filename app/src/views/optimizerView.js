@@ -102,7 +102,8 @@ export function mountOptimizer(root, data, { go }) {
         <div class="opt-form-group">
           <span class="opt-field-label">Facility Viewport Mode:</span>
           <div class="chips opt-chip-group" id="opt-cam-chips">
-            <button type="button" class="chip active" data-cam="orbit">Facility Orbit</button>
+            <button type="button" class="chip active" data-cam="burn">Flame Burn</button>
+            <button type="button" class="chip" data-cam="orbit">Facility Orbit</button>
             <button type="button" class="chip" data-cam="chamber">Chamber View</button>
             <button type="button" class="chip" data-cam="sample">Needle Macro</button>
             <button type="button" class="chip" data-cam="rack">Gas Manifold</button>
@@ -127,8 +128,26 @@ export function mountOptimizer(root, data, { go }) {
             <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ffd48a;"></span>
             NASA Research Facility · [P × O₂ × d₀]
           </span>
+          <div class="opt-phase-row" id="opt-phase-row">
+            <span data-i="0">Deployment</span>
+            <span data-i="1">Ignition</span>
+            <span data-i="2">Hot Flame</span>
+            <span data-i="3">Burnout</span>
+          </div>
           <div class="stage-controls-bar">
             <span id="opt-surrogate-badge" style="font-size:11px; color:#94a3b8; font-family:var(--f-mono);">Surrogate: GPR Matérn 5/2 · n-Heptane (N=106)</span>
+          </div>
+        </div>
+
+        <!-- Interactive Flame HUD & Playback Controls -->
+        <div class="opt-flame-hud">
+          <div class="opt-flame-caption" id="opt-flame-caption"></div>
+          <div class="opt-flame-controls">
+            <button type="button" class="opt-flame-btn" id="opt-flame-play" title="Play / Pause flame playback">⏸</button>
+            <button type="button" class="opt-flame-btn" id="opt-flame-restart" title="Restart combustion sequence">↻ Restart</button>
+            <input type="range" id="opt-flame-scrub" min="0" max="1000" value="0" aria-label="Scrub combustion sequence">
+            <span id="opt-flame-time" class="opt-flame-time">t = 0.0 s</span>
+            <button type="button" class="opt-flame-btn" id="opt-flame-speed" title="Adjust simulation speed">1×</button>
           </div>
         </div>
 
@@ -1342,6 +1361,37 @@ export function mountOptimizer(root, data, { go }) {
     renderGPRSurface();
   }
 
+  let scrubbing = false;
+  const CAPTIONS = [
+    (s) => `Opposed needles deploy a ${currentCandidate?.droplet_diameter_mm?.toFixed(1) ?? currentCandidate?.d0_mm?.toFixed(1) ?? "–"} mm droplet at chamber center.`,
+    () => "Hot-wire igniter fires; needles retract so the droplet floats freely.",
+    (s) => s.soot
+      ? "Spherical diffusion flame: outer blue reaction zone enclosing an incandescent soot shell."
+      : "Nearly invisible blue flame, with no soot shell.",
+    () => "Droplet exhausted; flame collapses to extinction.",
+  ];
+
+  function updateFlameHud(s) {
+    q("#opt-phase-row")?.querySelectorAll("span").forEach((el) => {
+      el.classList.toggle("active", Number(el.dataset.i) === s.phaseIndex);
+    });
+    const cap = q("#opt-flame-caption");
+    if (cap) {
+      let txt = s.enabled ? CAPTIONS[s.phaseIndex](s) : "Unsupported condition: no calibrated flame model, droplet only.";
+      if (s.enabled && s.gravity > 0.01 && s.gravity < 0.99) txt += " Buoyancy distortion is illustrative; no partial-g flight data.";
+      if (cap.textContent !== txt) cap.textContent = txt;
+    }
+    const tEl = q("#opt-flame-time");
+    if (tEl) {
+      tEl.textContent = s.phaseIndex >= 2 || s.tReal > 0
+        ? `t = ${s.tReal.toFixed(1)} s · d = ${s.dNowMm.toFixed(2)} mm` : "t = 0.0 s";
+    }
+    if (!scrubbing) {
+      const sc = q("#opt-flame-scrub");
+      if (sc) sc.value = Math.round(s.progress * 1000);
+    }
+  }
+
   function initFacility() {
     facility3d = createOptimizerFacility(stageEl, {
       proposalsData,
@@ -1355,12 +1405,46 @@ export function mountOptimizer(root, data, { go }) {
       onSelectHistorical: (hist) => {
         displayHistoricalRun(hist);
       },
-      onProbeInfo: () => {}
+      onProbeInfo: () => {},
+      onFlameState: updateFlameHud
     });
 
     const initialFuel = q("#opt-fuel-select")?.value || "n-heptane";
     handleFuelChange(initialFuel);
   }
+
+  // Flame HUD playback controls
+  q("#opt-flame-play")?.addEventListener("click", (e) => {
+    const f = facility3d?.flame;
+    if (!f) return;
+    if (f.isPlaying()) {
+      f.pause();
+      e.currentTarget.textContent = "▶";
+    } else {
+      f.play();
+      e.currentTarget.textContent = "⏸";
+    }
+  });
+
+  q("#opt-flame-restart")?.addEventListener("click", () => {
+    facility3d?.flame.restart();
+    const playBtn = q("#opt-flame-play");
+    if (playBtn) playBtn.textContent = "⏸";
+  });
+
+  q("#opt-flame-scrub")?.addEventListener("pointerdown", () => { scrubbing = true; });
+  q("#opt-flame-scrub")?.addEventListener("input", (e) => {
+    facility3d?.flame.seek(e.target.value / 1000);
+  });
+  window.addEventListener("pointerup", () => { scrubbing = false; });
+
+  const SPEEDS = [0.5, 1, 2, 4];
+  let si = 1;
+  q("#opt-flame-speed")?.addEventListener("click", (e) => {
+    si = (si + 1) % SPEEDS.length;
+    facility3d?.flame.setSpeed(SPEEDS[si]);
+    e.currentTarget.textContent = `${SPEEDS[si]}×`;
+  });
 
   // Camera mode chips
   q("#opt-cam-chips").addEventListener("click", (e) => {

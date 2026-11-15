@@ -200,7 +200,226 @@ export function evaluateCandidateFeasibility(data, userConstraints, activeGravit
   };
 }
 
-export function createOptimizerFacility(container, { proposalsData, historicalRecords, onSelectCandidate, onSelectHistorical, onProbeInfo }) {
+// ================= FLAME RIG =================
+const FLAME_VERT = `
+varying vec3 vN; varying vec3 vV; varying vec3 vP;
+void main(){
+  vec4 mv = modelViewMatrix * vec4(position,1.0);
+  vN = normalize(normalMatrix * normal);
+  vV = normalize(-mv.xyz);
+  vP = position;
+  gl_Position = projectionMatrix * mv;
+}`;
+const FLAME_FRAG = `
+uniform float uTime; uniform float uIntensity; uniform vec3 uColA; uniform vec3 uColB;
+varying vec3 vN; varying vec3 vV; varying vec3 vP;
+float hash(vec3 p){ p=fract(p*0.3183099+.1); p*=17.; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float noise(vec3 x){
+  vec3 i=floor(x), f=fract(x); f=f*f*(3.-2.*f);
+  return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x), mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x), mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);
+}
+void main(){
+  float fres = pow(1.0 - abs(dot(vN, vV)), 2.0);
+  float n = noise(vP*3.0 + vec3(0.0,-uTime*0.6,uTime*0.3))*0.6 + noise(vP*7.0 + uTime*0.9)*0.4;
+  float shell = fres*(0.55 + 0.9*n) + 0.12*n;
+  vec3 col = mix(uColA, uColB, clamp(fres + n*0.3, 0.0, 1.0));
+  gl_FragColor = vec4(col*1.8, shell*uIntensity);
+}`;
+
+function makeGlowTexture() {
+  const c = document.createElement("canvas"); c.width = c.height = 128;
+  const g = c.getContext("2d");
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grd.addColorStop(0, "rgba(255,255,255,1)");
+  grd.addColorStop(0.25, "rgba(255,255,255,0.45)");
+  grd.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+export const FLAME_PHASES = ["DEPLOYMENT", "IGNITION", "HOT FLAME", "BURNOUT"];
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+const easeOut = (u) => 1 - Math.pow(1 - clamp01(u), 3);
+const smooth = (a, b, x) => { const u = clamp01((x - a) / (b - a)); return u * u * (3 - 2 * u); };
+
+function createFlameRig(parent, droplet, dropletMat) {
+  const group = new THREE.Group();
+  parent.add(group);
+  const glowTex = makeGlowTexture();
+  const blueC = new THREE.Color(0x6aa6ff), amberC = new THREE.Color(0xffb27a);
+
+  // Blue spherical diffusion flame (shader shell)
+  const shellMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }, uIntensity: { value: 0 },
+      uColA: { value: new THREE.Color(0x2563eb) }, uColB: { value: new THREE.Color(0x7dd3fc) },
+    },
+    vertexShader: FLAME_VERT, fragmentShader: FLAME_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), shellMat);
+  group.add(shell);
+
+  // Amber soot shell (particles on a thin unit-sphere shell, scaled per frame)
+  const SOOT_N = 900, sp = new Float32Array(SOOT_N * 3);
+  for (let i = 0; i < SOOT_N; i++) {
+    const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+    const r = 0.82 + Math.random() * 0.18;
+    sp[i * 3] = s * Math.cos(th) * r; sp[i * 3 + 1] = u * r; sp[i * 3 + 2] = s * Math.sin(th) * r;
+  }
+  const sootGeo = new THREE.BufferGeometry();
+  sootGeo.setAttribute("position", new THREE.BufferAttribute(sp, 3));
+  const sootMat = new THREE.PointsMaterial({
+    size: 2.2, map: glowTex, color: 0xffb347, transparent: true, opacity: 0,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const soot = new THREE.Points(sootGeo, sootMat);
+  group.add(soot);
+
+  // Glow sprites + ignition flash + light
+  const mkSprite = (color) => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    group.add(s); return s;
+  };
+  const glowBlue = mkSprite(0x4f8cff), glowAmber = mkSprite(0xffa43a), flashSprite = mkSprite(0xffffff);
+  const light = new THREE.PointLight(0x6aa6ff, 0, 350, 1.4);
+  group.add(light);
+
+  // Buoyant plume (only when 0 < g < 1)
+  const PL = 160, plumePos = new Float32Array(PL * 3), plumeAge = new Float32Array(PL), plumeAng = new Float32Array(PL);
+  for (let i = 0; i < PL; i++) { plumeAge[i] = Math.random(); plumeAng[i] = Math.random() * Math.PI * 2; }
+  const plumeGeo = new THREE.BufferGeometry();
+  plumeGeo.setAttribute("position", new THREE.BufferAttribute(plumePos, 3));
+  const plumeMat = new THREE.PointsMaterial({
+    size: 3, map: glowTex, color: 0xffc27a, transparent: true, opacity: 0,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const plume = new THREE.Points(plumeGeo, plumeMat);
+  parent.add(plume);
+
+  // State
+  let cfg = { d0: 2, k: 0.5, o2: 0.21, p: 1, fuel: "n-heptane", enabled: true, g: 0 };
+  let R0 = 3.6, S = 6, sootAmt = 1, baseI = 1, burnDisplay = 6, tbReal = 8;
+  let T0 = 1.6, T1 = 2.3, T2 = 8.3, T3 = 9.7, total = 10.7;
+  let clock = 0, playing = true, speed = 1, lastKey = "";
+  let state = { phase: "DEPLOYMENT", phaseIndex: 0, progress: 0, tReal: 0, dNowMm: 0, needlesRetracted: false, enabled: true, tbReal };
+
+  function configure(c) {
+    cfg = { ...cfg, ...c };
+    const fuel = String(cfg.fuel || "n-heptane").toLowerCase();
+    const isMeth = fuel.includes("meth");
+    const K = cfg.k > 0 ? cfg.k : 0.5;
+    R0 = cfg.d0 * 1.8;
+    tbReal = (cfg.d0 * cfg.d0) / K;
+    burnDisplay = Math.max(4, Math.min(12, tbReal));
+    S = Math.max(3.2, Math.min(8, 7.5 - (cfg.o2 - 0.21) * 14 - (cfg.p - 1) * 0.6));
+    sootAmt = isMeth ? 0 : Math.max(0.35, Math.min(1, 1.15 - (cfg.o2 - 0.21) * 1.5));
+    baseI = (isMeth ? 0.55 : 0.85) + (cfg.o2 - 0.21) * 1.6;
+    shellMat.uniforms.uColA.value.set(isMeth ? 0x3b82f6 : 0x2563eb);
+    shellMat.uniforms.uColB.value.set(isMeth ? 0x93c5fd : 0x7dd3fc);
+    T0 = 1.6; T1 = T0 + 0.7; T2 = T1 + burnDisplay; T3 = T2 + 1.4; total = T3 + 1.0;
+    // restart only when the experiment itself changes (not gravity / slider noise)
+    const key = [cfg.d0, cfg.k, cfg.o2, cfg.p, cfg.fuel, cfg.enabled].join("|");
+    if (key !== lastKey) { lastKey = key; clock = 0; }
+  }
+
+  function update(dt, t) {
+    if (playing) clock += dt * speed;
+    if (!cfg.enabled) clock = Math.min(clock, T0);      // unsupported: droplet only, no flame
+    else if (clock >= total) clock -= total;
+
+    let r = 0, flameR = 0, flameI = 0, sootV = 0, flash = 0, retracted = false, pi = 0, s = 0;
+    if (clock < T0) {                                   // DEPLOYMENT
+      const u = clock / T0;
+      r = R0 * easeOut(u) * (1 + 0.05 * Math.sin(t * 14) * (1 - u));
+    } else if (clock < T1) {                            // IGNITION
+      const u = (clock - T0) / (T1 - T0); pi = 1;
+      r = R0; retracted = u > 0.15;
+      flash = Math.pow(1 - u, 2);
+      flameI = easeOut(u);
+      flameR = R0 * (1.1 + (S - 1.1) * easeOut(u));
+    } else if (clock < T2) {                            // HOT FLAME (d² law)
+      s = (clock - T1) / burnDisplay; pi = 2;
+      r = R0 * Math.sqrt(Math.max(0.0001, 1 - s));
+      retracted = true;
+      flameR = R0 * S * (1 - 0.5 * s * s);
+      flameI = 0.92 + 0.08 * Math.sin(t * 9);
+      sootV = smooth(0, 0.25, s) * (1 - smooth(0.85, 1, s) * 0.5);
+    } else if (clock < T3) {                            // BURNOUT
+      const u = (clock - T2) / (T3 - T2); pi = 3; s = 1;
+      retracted = true;
+      flameR = R0 * S * 0.5 * (1 - u * u);
+      flameI = Math.pow(1 - u, 1.5) * (0.7 + 0.3 * Math.sin(t * 40));
+      sootV = 0.5 * (1 - u);
+    } else { pi = 3; s = 1; retracted = true; }         // reset pause
+
+    // droplet
+    droplet.visible = r > 0.02;
+    droplet.scale.setScalar(Math.max(1e-3, r));
+    dropletMat.emissiveIntensity = 0.35 + flameI * 0.45 + Math.sin(t * 2.5) * 0.08;
+
+    // flame group + buoyancy deformation
+    const g = cfg.g || 0;
+    const gOn = g > 0.01 && g < 0.99;
+    group.scale.set(1, 1 + (gOn ? g * 0.9 : 0), 1);
+    group.position.y = gOn ? flameR * 0.35 * g : 0;
+    const I = flameI * baseI;
+    shell.scale.setScalar(Math.max(1e-3, flameR));
+    shell.visible = flameR > 0.05;
+    shellMat.uniforms.uTime.value = t;
+    shellMat.uniforms.uIntensity.value = I;
+
+    soot.scale.setScalar(Math.max(1e-3, flameR * 0.68));
+    soot.rotation.y = t * 0.25; soot.rotation.x = t * 0.1;
+    sootMat.opacity = sootAmt * sootV * (0.75 + 0.25 * Math.sin(t * 7));
+
+    glowBlue.scale.setScalar(Math.max(1e-3, flameR * 2.6)); glowBlue.material.opacity = I * 0.32;
+    glowAmber.scale.setScalar(Math.max(1e-3, flameR * 1.5)); glowAmber.material.opacity = sootAmt * sootV * 0.45;
+    flashSprite.scale.setScalar(R0 * (3 + flash * 8)); flashSprite.material.opacity = flash;
+    light.color.copy(blueC).lerp(amberC, sootAmt * sootV);
+    light.intensity = I * 5 + flash * 12;
+
+    // plume
+    plume.visible = gOn && flameI > 0.05;
+    if (plume.visible) {
+      for (let i = 0; i < PL; i++) {
+        plumeAge[i] += dt * (0.5 + g * 1.2);
+        if (plumeAge[i] > 1) { plumeAge[i] = 0; plumeAng[i] = Math.random() * Math.PI * 2; }
+        const a = plumeAge[i], rad = flameR * 0.35 * (1 - a * 0.6);
+        plumePos[i * 3] = Math.cos(plumeAng[i]) * rad;
+        plumePos[i * 3 + 1] = flameR * 0.6 + a * flameR * 3 * g;
+        plumePos[i * 3 + 2] = Math.sin(plumeAng[i]) * rad;
+      }
+      plumeGeo.attributes.position.needsUpdate = true;
+      plumeMat.opacity = flameI * (0.5);
+    }
+
+    state = {
+      phase: cfg.enabled ? FLAME_PHASES[pi] : "DEPLOYMENT", phaseIndex: cfg.enabled ? pi : 0,
+      progress: clock / total, tReal: Math.max(0, clock - T1) / burnDisplay * tbReal,
+      dNowMm: cfg.d0 * Math.sqrt(Math.max(0, 1 - s)), needlesRetracted: retracted,
+      enabled: cfg.enabled, tbReal, soot: sootAmt > 0, gravity: g,
+    };
+    return state;
+  }
+
+  return {
+    configure, update,
+    play: () => { playing = true; }, pause: () => { playing = false; },
+    isPlaying: () => playing,
+    restart: () => { clock = 0; playing = true; },
+    setSpeed: (v) => { speed = v; },
+    seek: (frac) => { clock = clamp01(frac) * total; },
+    setGravity: (g) => { cfg.g = g; },
+    dispose: () => { glowTex.dispose(); shellMat.dispose(); sootGeo.dispose(); sootMat.dispose(); plumeGeo.dispose(); plumeMat.dispose(); },
+  };
+}
+
+export function createOptimizerFacility(container, { proposalsData, historicalRecords, onSelectCandidate, onSelectHistorical, onProbeInfo, onFlameState }) {
   const W_init = Math.max(10, container.clientWidth || 800);
   const H_init = Math.max(10, container.clientHeight || 540);
 
@@ -315,8 +534,10 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
   const sampleDroplet = new THREE.Mesh(sampleDropletGeo, sampleDropletMat);
   needleAssembly.add(sampleDroplet);
 
-  let targetNeedleOffset = 8.0;
-  let targetDropletScale = 2.5;
+  let baseNeedleOffset = 8.0;
+  const flameRig = createFlameRig(needleAssembly, sampleDroplet, sampleDropletMat);
+  let currentGravity = 0;
+  let lastFlameEmit = 0;
 
   rod(V(-35, 28, 12), V(-6, 7, 0), 1.2, M.highPurityCeramic, needleAssembly);
   rod(V(35, 28, 12), V(6, 7, 0), 1.2, M.highPurityCeramic, needleAssembly);
@@ -604,8 +825,16 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
     activeCandidate = cand;
 
     const d0 = cand.droplet_diameter_mm !== null && cand.droplet_diameter_mm !== undefined ? cand.droplet_diameter_mm : 1.5;
-    targetDropletScale = d0 * 1.8;
-    targetNeedleOffset = 5.0 + (d0 * 2.2);
+    baseNeedleOffset = 5.0 + d0 * 2.2;
+    flameRig.configure({
+      d0,
+      k: cand.predicted_burn_rate_k,
+      o2: cand.o2_mole_fraction ?? 0.21,
+      p: cand.pressure_atm ?? 1.0,
+      fuel: cand.fuel || "n-heptane",
+      enabled: cand.isFeasible !== false,
+      g: currentGravity,
+    });
 
     // Update chamber pressure gauge needle rotation (-135 deg to +45 deg)
     if (o2GaugeNeedle && cand.pressure_atm !== null) {
@@ -663,6 +892,8 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
    * Distinguishes: FEASIBLE_SPACEFLIGHT, GROUND_FACILITY_ONLY, HYPOTHETICAL_FRONTIER, UNSUPPORTED
    */
   function updateConstraints({ maxP = 2.5, maxO2 = 0.42, maxD0 = 2.5, objective = "MAX_INFORMATION_GAIN", gravity = 0.0 } = {}) {
+    currentGravity = gravity;
+    flameRig.setGravity(gravity);
     const evaluatedPool = [];
 
     // Update chamber gravity buoyancy vector (qualitative visualization)
@@ -778,18 +1009,22 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
   }
 
   function setCameraMode(mode) {
-    if (mode === "chamber") {
-      targetCameraPos.set(0, 15, zCenter + 190);
+    const closeUp = mode === "burn" || mode === "sample";
+    paramSpaceGroup.visible = !(mode === "burn");
+    portGroup.visible = !closeUp;
+    if (mode === "burn") {
+      spherical.radius = 170; spherical.theta = 0; spherical.phi = Math.PI / 2.15;
       targetLookAt.set(0, 0, zCenter);
+      targetCameraPos.set(0, 170 * Math.cos(spherical.phi), zCenter + 170 * Math.sin(spherical.phi));
+    } else if (mode === "chamber") {
+      targetCameraPos.set(0, 15, zCenter + 190); targetLookAt.set(0, 0, zCenter);
     } else if (mode === "sample") {
-      targetCameraPos.set(0, 8, zCenter + 65);
-      targetLookAt.set(0, 0, zCenter);
+      targetCameraPos.set(0, 8, zCenter + 65); targetLookAt.set(0, 0, zCenter);
     } else if (mode === "rack") {
-      targetCameraPos.set(0, 260, zCenter + 180);
-      targetLookAt.set(0, 120, zCenter);
+      targetCameraPos.set(0, 260, zCenter + 180); targetLookAt.set(0, 120, zCenter);
     } else {
-      targetCameraPos.set(0, 180, 520);
-      targetLookAt.set(0, 40, 0);
+      spherical.radius = 520; spherical.theta = 0; spherical.phi = Math.PI / 2.3;
+      targetCameraPos.set(0, 180, 520); targetLookAt.set(0, 40, 0);
     }
   }
 
@@ -830,7 +1065,7 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
     raycaster.setFromCamera(mouse, camera);
 
     // 1. Raycast candidates (retrieving freshest evaluated state)
-    const candIntersects = raycaster.intersectObjects(candidateMeshes, false);
+    const candIntersects = paramSpaceGroup.visible ? raycaster.intersectObjects(candidateMeshes, false) : [];
     if (candIntersects.length > 0) {
       const hit = candIntersects[0].object;
       const hitId = hit.userData?.cand?.candidate_id;
@@ -888,9 +1123,15 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
     currentLookAt.lerp(targetLookAt, 0.06);
     camera.lookAt(currentLookAt);
 
-    leftNeedle.position.x = THREE.MathUtils.lerp(leftNeedle.position.x, -targetNeedleOffset, 0.08);
-    rightNeedle.position.x = THREE.MathUtils.lerp(rightNeedle.position.x, targetNeedleOffset, 0.08);
-    sampleDroplet.scale.setScalar(THREE.MathUtils.lerp(sampleDroplet.scale.x, targetDropletScale, 0.08));
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - (animate._last || now)) / 1000);
+    animate._last = now;
+    const fs = flameRig.update(dt, t);
+    const goal = fs.needlesRetracted ? 70 : baseNeedleOffset;
+    const k = fs.needlesRetracted ? 0.2 : 0.08;
+    leftNeedle.position.x = THREE.MathUtils.lerp(leftNeedle.position.x, -goal, k);
+    rightNeedle.position.x = THREE.MathUtils.lerp(rightNeedle.position.x, goal, k);
+    if (now - lastFlameEmit > 90) { lastFlameEmit = now; onFlameState?.(fs); }
 
     candidateNodes.forEach(({ mesh: m, halo, data }, i) => {
       m.rotation.y = t * 0.4 + i;
@@ -900,10 +1141,11 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
       halo.scale.set(pulse, pulse, pulse);
     });
 
-    sampleDropletMat.emissiveIntensity = 0.35 + Math.sin(t * 2.5) * 0.15;
     renderer.render(scene, camera);
   }
   animate();
+
+  setCameraMode("burn");
 
   return {
     selectCandidate,
@@ -916,6 +1158,11 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
     },
     getCandidates: () => normalizedCandidates,
     getHistorical: () => historicalMetadata,
+    flame: {
+      play: () => flameRig.play(), pause: () => flameRig.pause(),
+      isPlaying: () => flameRig.isPlaying(), restart: () => flameRig.restart(),
+      setSpeed: (v) => flameRig.setSpeed(v), seek: (f) => flameRig.seek(f),
+    },
     dispose: () => {
       if (animId) cancelAnimationFrame(animId);
       ro.disconnect();
@@ -924,6 +1171,7 @@ export function createOptimizerFacility(container, { proposalsData, historicalRe
       window.removeEventListener("pointerup", onPointerUp);
       dom.removeEventListener("click", onPointerClick);
       dom.removeEventListener("wheel", onWheel);
+      flameRig.dispose();
       disposeTree(scene);
       renderer.dispose();
       if (dom.parentElement === container) container.removeChild(dom);
